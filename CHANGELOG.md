@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+- **Own runbook catalog without editing the repository.** New setting `CATALOG_FILE` (default `/etc/pikett/catalog.json`); compose mounts the git-ignored folder `deploy/ops-server/catalog/` there, and the service uses `catalog.json` from it instead of `runner/catalog.json` when it exists. Nothing changes without the file. `deploy/runner/install.sh` takes the same file through `CATALOG_FILE` (kept in `/etc/ops-runner/catalog.json`); every runner needs a catalog with the same security fields (see the README section "Runbook catalog").
+
 ## 0.2.0 - 2026-11-16
 
 Launch hardening. Upgrade notes first:

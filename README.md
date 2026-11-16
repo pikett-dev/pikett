@@ -237,7 +237,7 @@ Every integration is optional. Without its settings a feature is switched off, n
 |---|---|
 | Alert rules | `deploy/vmalert/rules/` |
 | What Alloy collects, sampling, labels | `deploy/app-host/alloy/config.alloy` |
-| Runbooks, their risk and the servers they may run on | `runner/catalog.json` (the server names in it are examples) |
+| Runbooks, their risk and the servers they may run on | your own `deploy/ops-server/catalog/catalog.json` (see below); `runner/catalog.json` is the shipped example |
 | What the analyst knows about your stack | `PROJECT_NAME`, `AGENT_STACK_DESCRIPTION` |
 | New read-only tools for the analyst | `app/agent/tools/` behind the ports in `app/agent/ports.py` |
 | A new security check | a module in `app/security/` that implements the `Check` protocol in `app/security/base.py` |
@@ -246,6 +246,10 @@ Every integration is optional. Without its settings a feature is switched off, n
 ### Without Coolify
 
 Coolify is used in four places: the deploy history for the analyst, the backup check, the Coolify version check, and the `container_restart` and `redeploy_previous` runbooks. Without `COOLIFY_URL` these are off and everything else runs. A deploy source for plain `docker compose` or another platform is a `ChangeSource` implementation (`app/agent/ports.py`) and a `Coolify`-like protocol in `runner/runbooks.py`. Contributions welcome.
+
+### Runbook catalog
+
+`runner/catalog.json` lists the runbooks with example server names (`app-1`). To use your own server names, texts or risk levels, copy it to `deploy/ops-server/catalog/catalog.json` on the ops server and edit it; compose mounts that folder into the container and the service uses the file when it exists (`CATALOG_FILE`, default `/etc/pikett/catalog.json`), otherwise the shipped one. Restart the service after a change. A file that does not parse stops the service with the reason, and so does a `CATALOG_FILE` you set yourself that points to a missing file. The folder is git-ignored and compose creates it empty when it is missing, so an update of Pikett never overwrites your file. Every runner must hold a catalog with the same runbooks, risk levels, servers, verify modes and parameters (the digest signed into each job covers exactly these, or it rejects the jobs; texts and `proposable` are not in it, keep `proposable` equal by hand). Install it on a runner with `ssh root@<server> CATALOG_FILE=<path on the server> .../install.sh` (`deploy/runner/README.md`); it lands in `/etc/ops-runner/catalog.json` and stays there when the script runs again.
 
 ## Security model
 

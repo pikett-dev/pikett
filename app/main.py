@@ -36,7 +36,7 @@ from app.security.signals import Signals
 from app.security.wiring import build_security
 from app.web import legacy, pages
 from app.web.templating import STATIC_DIR, build_templates
-from runner.catalog import load_catalog
+from runner.catalog import load_installed_catalog
 from runner.keys import private_key_from_b64
 
 log = logging.getLogger(__name__)
@@ -74,7 +74,9 @@ def create_app(
         agent = build_agent_llm(settings, sessions, clock)  # None without an API key: the agent is off
 
         async with httpx.AsyncClient(timeout=10) as client:
-            catalog = load_catalog()
+            catalog = load_installed_catalog(
+                settings.catalog_file, required="catalog_file" in settings.model_fields_set
+            )
             actions = ButtonActions(settings.slack_allowed_users, locale)
             slack: SlackNotifier | None = None
             if chat is None and settings.slack_bot_token and settings.slack_app_token:

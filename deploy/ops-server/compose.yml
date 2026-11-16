@@ -166,6 +166,8 @@ services:
       - "${TAILSCALE_IP:?set TAILSCALE_IP}:8030:8030"
     volumes:
       - osv-work:/var/lib/pikett/work
+      # Optional own runbook catalog: deploy/ops-server/catalog/catalog.json (README, "Runbook catalog").
+      - ./catalog:/etc/pikett:ro
 
 # `file:` secrets fail with a clear error when the file is missing; a bind mount would create a directory instead.
 secrets:

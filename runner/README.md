@@ -4,7 +4,7 @@ The runner executes only actions that are in the catalog and that the ops servic
 
 ## Catalog
 
-`catalog.json` is a checked-in file that the ops service and the runner load the same way (`catalog.py`). Per runbook:
+`catalog.json` is a checked-in file that the ops service and the runner load the same way (`catalog.py`). An installation can use its own file of the same schema (README, "Runbook catalog"). Per runbook:
 
 | Field | Meaning |
 |---|---|

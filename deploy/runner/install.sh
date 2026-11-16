@@ -12,6 +12,14 @@ here="$(cd "$(dirname "$0")" && pwd)"
 src="$here/../../runner"
 [ "$(id -u)" = 0 ] || { echo "error: run as root" >&2; exit 1; }
 [ -f "$src/catalog.json" ] || { echo "error: no runner/ folder next to this script" >&2; exit 1; }
+# Optional own catalog (the same file as deploy/ops-server/catalog/catalog.json on the ops server). It is checked with
+# the runner's own parser before anything on this server changes, and kept in /etc/ops-runner, so a later run of this
+# script without CATALOG_FILE leaves it alone. Pass it on the remote command line: ssh root@host CATALOG_FILE=... script
+if [ -n "${CATALOG_FILE:-}" ]; then
+  [ -f "$CATALOG_FILE" ] || { echo "error: CATALOG_FILE $CATALOG_FILE is not a file" >&2; exit 1; }
+  python3 -I -c 'import sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); from runner.catalog import load_catalog; load_catalog(Path(sys.argv[2]))' \
+    "$src/.." "$CATALOG_FILE" || { echo "error: $CATALOG_FILE is not a valid catalog (see above)" >&2; exit 1; }
+fi
 
 # python3-cryptography verifies the signatures; Ubuntu 24.04 ships 41.x, which has everything the runner uses.
 python3 -I -c "import cryptography" 2>/dev/null || { apt-get update -qq && apt-get install -y python3-cryptography; }
@@ -26,6 +34,7 @@ for file in "$src"/*.py "$src"/catalog.json; do
 done
 install -d -m 700 -o ops-runner -g ops-runner /var/lib/ops-runner
 install -d -m 755 -o root -g root /etc/ops-runner
+[ -z "${CATALOG_FILE:-}" ] || install -m 644 -o root -g root "$CATALOG_FILE" /etc/ops-runner/catalog.json
 
 if [ ! -f /etc/ops-runner/job-signing.pub ]; then
   echo "error: put the public signing key into /etc/ops-runner/job-signing.pub first (see README.md)" >&2

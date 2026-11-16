@@ -1,6 +1,7 @@
 import ipaddress
 import re
 from functools import cached_property, lru_cache
+from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -91,6 +92,9 @@ class Settings(BaseSettings):
     agent_fallback_model: str = "claude-haiku-5-5"
     agent_auto_analyze: bool = True  # analyse P1 and P2 incidents when they open; off: only the button
     agent_max_parallel: int = Field(default=2, gt=0)  # analyses running at the same time, which bounds the overshoot
+
+    # Own runbook catalog, used instead of runner/catalog.json when the file exists (README, "Runbook catalog").
+    catalog_file: Path = Path("/etc/pikett/catalog.json")
 
     # Security checks (app/security). One token per server (HOST_NAME there -> token); a report is accepted only with
     # the token of the server it names, so one server cannot report for the other. Empty: reports are refused.

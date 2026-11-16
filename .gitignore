@@ -26,6 +26,9 @@ job-signing.key
 .worktrees/
 .claude/settings.local.json
 
+# The installation's own runbook catalog (see README, "Runbook catalog").
+deploy/ops-server/catalog/
+
 # Token files (for example deploy/ops-server/alert-token, read by vmalert). Never commit them.
 *-token
 *.token

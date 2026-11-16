@@ -21,7 +21,7 @@ from typing import Any, Protocol
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from runner import __version__
-from runner.catalog import Catalog, load_catalog
+from runner.catalog import Catalog, load_installed_catalog
 from runner.jobs import JobRejected, is_safe_id, public_key_from_b64, verify_job
 from runner.runbooks import Executor, Outcome, build_executor
 
@@ -242,7 +242,11 @@ def main() -> None:
     seen = SeenStore(state_dir / "seen")
     runbooks = build_executor(dict(os.environ), state_dir)
     api = HttpApi(url, token)
-    runner = Runner(api, public_key, load_catalog(), host, seen, runbooks)
+    # The same file as the service uses (install.sh puts it here), else the shipped catalog.
+    catalog = load_installed_catalog(
+        Path(os.environ.get("CATALOG_FILE", "/etc/ops-runner/catalog.json")), required="CATALOG_FILE" in os.environ
+    )
+    runner = Runner(api, public_key, catalog, host, seen, runbooks)
     stop = False
 
     def request_stop(*_: object) -> None:

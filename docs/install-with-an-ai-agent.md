@@ -164,7 +164,7 @@ Then, only with the human's "yes" for each: the patch window (section "Patch win
 
 ## Phase 6 (optional): actions through the runner
 
-Only if the human wants actions. Follow `deploy/runner/README.md`. The signing seed is generated on the ops server and never leaves it; only the public key goes to the app servers. Coolify tokens for the runner are created by the human in the Coolify UI with `read` and `deploy` rights, limited to the applications in `RUNNER_APPLICATIONS`.
+Only if the human wants actions. Follow `deploy/runner/README.md`. If the server names in `runner/catalog.json` (`app-1`) differ from the human's, copy it to `deploy/ops-server/catalog/catalog.json`, set the `hosts` to the human's server names, restart the ops service and install the same file on each runner (`CATALOG_FILE=...`). The signing seed is generated on the ops server and never leaves it; only the public key goes to the app servers. Coolify tokens for the runner are created by the human in the Coolify UI with `read` and `deploy` rights, limited to the applications in `RUNNER_APPLICATIONS`.
 
 **Check:** the runner card in `/ops` shows a heartbeat, and stopping the runner for 3 minutes opens a P1 `RunnerSilent` that closes when it is back.
 

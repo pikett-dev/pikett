@@ -7,12 +7,14 @@ Standard library only.
 
 import hashlib
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 CATALOG_PATH = Path(__file__).with_name("catalog.json")
+log = logging.getLogger(__name__)
 SUPPORTED_VERSION = 1
 RISKS = ("low", "medium", "high")
 VERIFY_MODES = ("health", "reboot")
@@ -226,3 +228,25 @@ def parse_catalog(data: object) -> Catalog:
 
 def load_catalog(path: Path = CATALOG_PATH) -> Catalog:
     return parse_catalog(json.loads(path.read_text(encoding="utf-8")))
+
+
+def load_installed_catalog(custom: Path, *, required: bool = False) -> Catalog:
+    """The installation's own catalog (`custom`) when it is a file, otherwise the one shipped in this folder.
+
+    The ops service (CATALOG_FILE) and the runner use this one rule. `required` is true when the path was set on
+    purpose: a missing file is then an error, because the shipped catalog names example servers. A file that cannot
+    be read or parsed raises CatalogError naming the path instead of falling back, because the other side would then
+    work with a different catalog and reject every job.
+    """
+    if required or custom.is_file():
+        try:
+            catalog = load_catalog(custom)
+        except (OSError, ValueError) as exc:  # unreadable, not UTF-8, not JSON, or CatalogError itself
+            raise CatalogError(f"catalog {custom}: {exc}") from exc
+        log.info("runbook catalog from %s (digest %s)", custom, catalog.digest[:12])
+        return catalog
+    if custom.parent.is_dir() and any(custom.parent.iterdir()):
+        log.warning("%s is missing but its folder has other files: is the catalog named differently?", custom)
+    catalog = load_catalog()
+    log.info("runbook catalog shipped with Pikett, no file at %s (digest %s)", custom, catalog.digest[:12])
+    return catalog
