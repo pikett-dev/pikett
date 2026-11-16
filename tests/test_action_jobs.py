@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import json
 from datetime import timedelta
 
 import pytest
@@ -11,7 +12,7 @@ from app.actions.service import VALID_FOR, ActionError, ActionService
 from app.config import Settings
 from app.main import create_app
 from app.models import ActionJob, RebootRequest, RunnerHeartbeat
-from runner.catalog import load_catalog
+from runner.catalog import CATALOG_PATH, load_catalog, parse_catalog
 from runner.jobs import verify_job
 from tests.fakes import EN, START, Clock, FakeChat, FakePager
 
@@ -180,6 +181,25 @@ async def test_a_reboot_approved_in_slack_starts_approved_and_can_exist_once(job
         )
 
 
+async def test_a_coolify_runbook_runs_on_any_server_that_lists_the_application(sessions, clock) -> None:
+    app = "abcdefghijklmnop12345678"
+    service = ActionService(sessions, clock, load_catalog(), KEY, {"web-9", OPS}, {"web-9": {app: "web"}}, locale=EN)
+    assert (
+        await service.propose("container_restart", {"application": app}, "web-9", USER)
+    ).runbook == "container_restart"
+    with pytest.raises(ActionError):  # the list is per server: the application is not on the other one
+        await service.propose("container_restart", {"application": app}, OPS, USER)
+
+
+async def test_a_runbook_restricted_to_named_servers_is_not_created_elsewhere(sessions, clock) -> None:
+    data = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+    data["runbooks"]["image_prune"]["hosts"] = [TEST]
+    service = ActionService(sessions, clock, parse_catalog(data), KEY, {TEST, OPS}, locale=EN)
+    assert (await service.propose("image_prune", {}, TEST, USER)).host == TEST
+    with pytest.raises(ActionError, match="cannot run on"):
+        await service.propose("image_prune", {}, OPS, USER)
+
+
 @pytest.mark.parametrize(
     ("runbook", "params", "host"),
     [
@@ -187,7 +207,7 @@ async def test_a_reboot_approved_in_slack_starts_approved_and_can_exist_once(job
         ("image_prune", {"x": 1}, TEST),
         ("container_restart", {"application": "../x"}, TEST),
         ("image_prune", {}, "unknown-host"),
-        ("container_restart", {"application": "abcdefghijklmnop12345678"}, OPS),  # Coolify runbooks: test server only
+        ("container_restart", {"application": "abcdefghijklmnop12345678"}, OPS),  # no application list for that server
     ],
 )
 async def test_a_job_outside_the_catalog_is_not_created(jobs, sessions, runbook, params, host) -> None:

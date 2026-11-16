@@ -16,7 +16,7 @@ APP = "abcdefghijklmnop12345678"
 T = {"en": "t"}  # a valid display text
 # The digest of the checked-in catalog. Jobs that are already signed carry it, so it must not change when only
 # display text changes (see test_the_checked_in_catalog_keeps_its_digest).
-CATALOG_DIGEST = "b060233d3336c4504a5405db0560f3d6d53045254381f45aa4fd40c33ccafaee"
+CATALOG_DIGEST = "76932117d77a8b15fa6ebd6c9c3c6fa1d9bd02ad2ddfbe93367e6f9480972b87"
 
 
 @pytest.fixture(scope="module")
@@ -147,12 +147,15 @@ def test_a_job_for_another_server_is_rejected(catalog: Catalog, key: Ed25519Priv
         check(catalog, key, sign_job(key, payload(catalog, host="ops-server")))
 
 
-def test_a_runbook_is_limited_to_its_servers(catalog: Catalog, key: Ed25519PrivateKey) -> None:
+def test_a_runbook_is_limited_to_its_servers(key: Ed25519PrivateKey) -> None:
+    data = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+    data["runbooks"]["container_restart"]["hosts"] = [HOST]  # the shipped catalog allows it on any server
+    limited = parse_catalog(data)
     envelope = sign_job(
-        key, payload(catalog, runbook="container_restart", host="ops-server", params={"application": APP})
+        key, payload(limited, runbook="container_restart", host="ops-server", params={"application": APP})
     )
     with pytest.raises(JobRejected, match="not allowed on this server"):
-        check(catalog, key, envelope, host="ops-server")
+        check(limited, key, envelope, host="ops-server")
 
 
 def test_an_expired_job_is_rejected(catalog: Catalog, key: Ed25519PrivateKey) -> None:

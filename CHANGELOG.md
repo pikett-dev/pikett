@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+## 0.4.0 - 2026-11-16
+
+One upgrade note first: update the ops service and every runner together (the catalog digest changes).
+
+- **The shipped catalog allows the two Coolify runbooks (`container_restart`, `redeploy_previous`) on any server** (`hosts: ["*"]`, was `["app-1"]`), so an installation needs no catalog of its own just to name its servers. Which servers get jobs at all is decided by `RUNNER_TOKENS`, and the application of such a job must be on that server's `RUNNER_APPLICATIONS` list; both were checked before and still are. **Upgrade: the catalog digest changes (`hosts` is part of it), so update the ops service and every runner together, or the runner rejects the jobs of the other side.** The runner no longer rejects these two runbooks by server name; what stops a job on a runner without Coolify is its own `COOLIFY_APPS` allowlist (empty by default, so it fails closed) and the scope of its Coolify token, so list `RUNNER_APPLICATIONS` only for servers whose runner has Coolify. The analyst's prompt names only servers with an application list for these runbooks. An installation that wants the old restriction keeps it in its own catalog (`CATALOG_FILE`, 0.3.0), whose `hosts` it sets as before. Do not approve a reboot or other action while the service and a runner are on different versions: a job rejected for the wrong digest is not retried.
+
 ## 0.3.0 - 2026-11-16
 
 Your own runbook catalog is configuration now. Nothing is required on upgrade; installations that keep the shipped catalog behave as before.

@@ -12,7 +12,7 @@
       },
       "risk": "medium",
       "hosts": [
-        "app-1"
+        "*"
       ],
       "verify": "health",
       "params": {
@@ -38,7 +38,7 @@
       },
       "risk": "high",
       "hosts": [
-        "app-1"
+        "*"
       ],
       "verify": "health",
       "params": {

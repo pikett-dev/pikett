@@ -18,8 +18,8 @@ A parameter that is not in the schema, is missing or does not fit is rejected. A
 
 | Runbook | Effect | Risk | Servers |
 |---|---|---|---|
-| `container_restart` | restart an application through the Coolify API | medium | app-1 |
-| `redeploy_previous` | deploy the commit of the last successful deployment before the current one, through Coolify | high | app-1 |
+| `container_restart` | restart an application through the Coolify API | medium | any server whose `RUNNER_APPLICATIONS` list has the application |
+| `redeploy_previous` | deploy the commit of the last successful deployment before the current one, through Coolify | high | any server whose `RUNNER_APPLICATIONS` list has the application |
 | `image_prune` | `docker image prune --all --force --filter until=168h` | low | all |
 | `apt_security` | `unattended-upgrade` now (security archives only, per the patch configuration) | medium | all |
 | `reboot_scheduled` | reboot; the ops service creates it only from an approval in Slack (`reboot_request`) | high | all |

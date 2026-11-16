@@ -44,7 +44,10 @@ def runbook_prompt(catalog: Catalog, hosts: set[str], applications: dict[str, di
         if not book.proposable:
             continue
         needs = " (needs `runbook_application`)" if "application" in book.params else ""
-        lines.append(f"- {book.id}{needs}: {book.text('description', 'en')} Servers: {', '.join(book.hosts)}.")
+        servers = book.hosts
+        if needs and applications:  # only a server with an application list can take it, whatever the catalog says
+            servers = tuple(sorted(host for host in applications if book.allows_host(host)))
+        lines.append(f"- {book.id}{needs}: {book.text('description', 'en')} Servers: {', '.join(servers)}.")
     for host, names in sorted((applications or {}).items()):
         listed = ", ".join(f"{name} = {uuid}" for uuid, name in sorted(names.items(), key=lambda kv: kv[1]))
         lines.append(f"Applications on {host} (name = UUID for `runbook_application`): {listed}.")
