@@ -237,7 +237,7 @@ Every integration is optional. Without its settings a feature is switched off, n
 |---|---|
 | Alert rules | `deploy/vmalert/rules/` |
 | What Alloy collects, sampling, labels | `deploy/app-host/alloy/config.alloy` |
-| Runbooks, their risk and the servers they may run on | your own `deploy/ops-server/catalog/catalog.json` (see below); `runner/catalog.json` is the shipped example |
+| Runbooks, their risk and the servers they may run on | `runner/catalog.json` (allows every runbook on any server); only to restrict servers or change texts, your own `deploy/ops-server/catalog/catalog.json` (see below) |
 | What the analyst knows about your stack | `PROJECT_NAME`, `AGENT_STACK_DESCRIPTION` |
 | New read-only tools for the analyst | `app/agent/tools/` behind the ports in `app/agent/ports.py` |
 | A new security check | a module in `app/security/` that implements the `Check` protocol in `app/security/base.py` |

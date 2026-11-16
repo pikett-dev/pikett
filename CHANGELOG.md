@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+- Docs: the configuration table in the README and the runner env example no longer suggest that a catalog of your own is needed to name your servers.
+
 ## 0.4.0 - 2026-11-16
 
 One upgrade note first: update the ops service and every runner together (the catalog digest changes).
