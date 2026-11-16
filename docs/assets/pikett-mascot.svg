@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="250" height="300" viewBox="0 0 250 300" role="img" aria-label="Pikett, a marmot on watch with a headlamp"><title>Pikett, a marmot on watch with a headlamp</title>
+<path d="M130 56 L212 14 L222 44 Z" fill="#f2a541" fill-opacity="0.35"/>
+<ellipse cx="120" cy="286" rx="74" ry="9" fill="#16262a" fill-opacity="0.12"/>
+<path d="M168 250 C 205 250, 214 214, 200 196 C 196 214, 186 230, 166 236 Z" fill="#6e4529"/>
+<path d="M120 112 C 70 112, 52 170, 58 220 C 62 262, 90 282, 120 282 C 150 282, 178 262, 182 220 C 188 170, 170 112, 120 112 Z" fill="#8b5e3c"/>
+<ellipse cx="120" cy="218" rx="38" ry="54" fill="#d8b48c"/>
+<ellipse cx="95" cy="281" rx="19" ry="8" fill="#6e4529"/><ellipse cx="145" cy="281" rx="19" ry="8" fill="#6e4529"/>
+<ellipse cx="105" cy="152" rx="11" ry="15" fill="#6e4529" transform="rotate(-18 105 152)"/>
+<ellipse cx="135" cy="152" rx="11" ry="15" fill="#6e4529" transform="rotate(18 135 152)"/>
+<circle cx="80" cy="56" r="13" fill="#6e4529"/><circle cx="80" cy="56" r="6" fill="#b9875f"/>
+<circle cx="160" cy="56" r="13" fill="#6e4529"/><circle cx="160" cy="56" r="6" fill="#b9875f"/>
+<ellipse cx="120" cy="92" rx="52" ry="46" fill="#8b5e3c"/>
+<path d="M70 74 Q120 50 170 74" fill="none" stroke="#0d5c63" stroke-width="9" stroke-linecap="round"/>
+<circle cx="120" cy="60" r="12" fill="#0d5c63"/><circle cx="120" cy="60" r="6.5" fill="#f2a541"/>
+<ellipse cx="120" cy="112" rx="27" ry="20" fill="#e3c6a2"/>
+<circle cx="100" cy="86" r="6.5" fill="#1b1410"/><circle cx="140" cy="86" r="6.5" fill="#1b1410"/>
+<circle cx="102" cy="84" r="2" fill="#ffffff"/><circle cx="142" cy="84" r="2" fill="#ffffff"/>
+<ellipse cx="120" cy="102" rx="7.5" ry="5" fill="#2b1d14"/>
+<path d="M120 107 V112 M112 113 Q120 119 128 113" fill="none" stroke="#2b1d14" stroke-width="2.2" stroke-linecap="round"/>
+<rect x="115.5" y="114" width="9" height="8" rx="2" fill="#ffffff" stroke="#2b1d14" stroke-width="1.4"/>
+<path d="M178 100 Q186 108 178 116" fill="none" stroke="#f2a541" stroke-width="4" stroke-linecap="round"/>
+<path d="M190 94 Q202 108 190 122" fill="none" stroke="#f2a541" stroke-width="4" stroke-linecap="round"/>
+<path d="M202 88 Q218 108 202 128" fill="none" stroke="#f2a541" stroke-width="4" stroke-linecap="round"/>
+</svg>

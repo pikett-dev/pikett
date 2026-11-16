@@ -1,0 +1,49 @@
+{# Status is shown by shape, text and color together (never color alone). #}
+{% macro icon(state, size=18) -%}
+<svg class="ico s-{{ state }}" width="{{ size }}" height="{{ size }}" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{%- if state == 'ok' %}<circle cx="10" cy="10" r="8"/><path d="M6.5 10.3l2.4 2.4 4.6-5"/>
+{%- elif state == 'warn' %}<path d="M10 2.5l8 14H2z"/><path d="M10 8v4M10 14.5v.1"/>
+{%- elif state in ('problem', 'failed') %}<path d="M6.5 2.5h7l4 4v7l-4 4h-7l-4-4v-7z"/><path d="M7.5 7.5l5 5M12.5 7.5l-5 5"/>
+{%- elif state == 'overdue' %}<circle cx="10" cy="10" r="8"/><path d="M10 5.5V10l3 2"/>
+{%- elif state == 'running' %}<path d="M10 2a8 8 0 1 0 8 8"/>
+{%- else %}<circle cx="10" cy="10" r="8" stroke-dasharray="2.5 3"/>{% endif -%}
+</svg>
+{%- endmacro %}
+
+{% macro badge(state) -%}
+<span class="badge s-{{ state }}">{{ icon(state, 16) }}<span>{{ t('web.state.' ~ state) }}</span></span>
+{%- endmacro %}
+
+{% macro strip(cells, label) -%}
+{% if cells %}
+{% set bad = cells | selectattr(1, 'equalto', 'failed') | list | length %}
+{% set missing = cells | selectattr(1, 'equalto', 'none') | list | length %}
+<svg class="strip" viewBox="0 0 {{ cells | length * 14 }} 18" height="18" role="img"
+     aria-label="{{ t('web.strip.aria', label=label, n=cells | length, bad=bad, missing=missing) }}">
+  {% for day, result in cells %}
+  <rect class="c-{{ result }}" x="{{ loop.index0 * 14 }}" y="0" width="11" height="18" rx="3"><title>{{ day | short_date }}: {{ t('web.strip.' ~ result) }}</title></rect>
+  {% endfor %}
+</svg>
+{% endif %}
+{%- endmacro %}
+
+{% macro event(e) -%}
+<li class="event{{ ' quiet' if e.status == 'ok' and e.kind == 'incident' else '' }}">
+  <span class="ev-time">{{ e.at | clock }}</span>
+  <span class="ev-mark">{{ icon(e.status, 16) }}</span>
+  <div class="ev-body">
+    <div class="ev-title">{% if e.href %}<a href="{{ e.href }}">{{ e.title }}</a>{% else %}{{ e.title }}{% endif %}
+      <span class="sr">{{ t('web.state.' ~ e.status) }}</span></div>
+    {% if e.summary %}<div class="ev-sum">{{ e.summary }}</div>{% endif %}
+    <div class="ev-meta muted">{% if e.host %}{{ e.host }}{% endif %}{% if e.duration %}{{ ', ' if e.host }}{{ t('web.event.duration', d=e.duration | duration) }}{% endif %}{% if e.slack %}{{ ', ' if e.host or e.duration }}<a href="{{ e.slack }}">{{ t('web.event.slack') }}</a>{% endif %}</div>
+  </div>
+</li>
+{%- endmacro %}
+
+{# The help text of a check: what it is, why we run it, when it runs here, and where to read more. #}
+{% macro help_body(h) -%}
+<p><span class="k">{{ t('web.help.what') }}</span> {{ h.what }}</p>
+<p><span class="k">{{ t('web.help.why') }}</span> {{ h.why }}</p>
+<p><span class="k">{{ t('web.help.ours') }}</span> {{ h.ours }}</p>
+<p class="links">{% for link in h.links %}<a href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.title }}<span class="sr">{{ t('web.help.new_tab') }}</span></a>{% endfor %}</p>
+{%- endmacro %}

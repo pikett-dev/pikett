@@ -1,0 +1,11 @@
+# Alerting pipeline health. The ops-service raises its own P1 when this alert stops arriving.
+groups:
+  - name: meta
+    interval: 30s
+    rules:
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: "Always firing; proves that vmalert can reach the ops-service"

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% from "ops_macros.html" import event %}
+{% set nav = 'history' %}
+{% block title %}{{ t('web.history.title') }} · {{ BRAND }}{% endblock %}
+{% block content %}
+<h2 style="font-size:1.6rem;margin-top:28px">{{ t('web.history.title') }}</h2>
+<p class="muted">{{ t('web.history.intro') }}</p>
+{% macro chips(label, key, options, default='') %}
+<div class="chips"><span class="lab">{{ label }}</span>
+  {% if not default %}<a class="chip" href="{{ link(**{key: ''}) }}"{% if not chosen[key] %} aria-current="true"{% endif %}>{{ t('web.history.all') }}</a>{% endif %}
+  {% for value, text in options.items() %}<a class="chip" href="{{ link(**{key: value}) }}"{% if chosen[key] == value %} aria-current="true"{% endif %}>{{ text }}</a>{% endfor %}
+</div>
+{% endmacro %}
+{{ chips(t('web.history.kind'), 'kind', kinds) }}
+{{ chips(t('web.history.status'), 'status', statuses) }}
+{% if servers %}{{ chips(t('web.history.host'), 'host', servers | items_of) }}{% endif %}
+{{ chips(t('web.history.period'), 'period', periods, 'x') }}
+
+{% if not days %}<p class="muted">{{ t('web.entries_none') }}</p>{% endif %}
+{% for label, entries in days %}
+<h3 class="day">{{ label }}</h3>
+<ul class="events">{% for e in entries %}{{ event(e) }}{% endfor %}</ul>
+{% endfor %}
+{% if truncated %}<p class="muted">{{ t('web.history.truncated', limit=limit) }}</p>{% endif %}
+{% endblock %}

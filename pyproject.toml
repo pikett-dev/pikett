@@ -1,0 +1,64 @@
+[project]
+name = "pikett"
+version = "0.1.0"
+description = "Self-hosted AI incident analysis, alerting and patch management for small teams on Docker servers"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp>=3.14.5",
+    "anthropic>=2.8.0",
+    "asyncpg>=0.32.0",
+    "cryptography>=50.0.2",
+    # Pinned: fingerprints.py reads drain3 internals (`drain.id_to_cluster`), and drain3 itself hard-pins old
+    # jsonpickle 1.5.1 and cachetools 4.2.1 (a CVE note on jsonpickle concerns decoding untrusted snapshots, which we
+    # never do: no persistence). Only app/agent/fingerprints.py imports it, so dropping it is a one-file change.
+    "drain3==0.9.11",
+    "fastapi>=0.146.0",
+    "httpx>=0.28.1",
+    "jinja2>=3.1.6",
+    "pydantic-settings>=2.16.0",
+    "slack-bolt>=1.30.0",
+    "sqlalchemy[asyncio]>=2.1.5",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.16.0",
+    "mypy>=2.4.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.17.1",
+    "testcontainers[postgres]>=4.15.0",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4", "UP", "S"]
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+# drain3 0.9.11 ships no py.typed marker.
+module = "drain3.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}{{ incident.title }} · {{ BRAND }}{% endblock %}
+{% block content %}
+<p><a href="/incidents">{{ t('web.incident.all') }}</a> · <a href="/ops/history">{{ t('web.incident.history') }}</a></p>
+<h1><span class="{{ incident.severity }}">{{ incident.severity }}</span> {{ incident.title }}</h1>
+{% if incident.annotations.get('summary') %}<p>{{ incident.annotations['summary'] }}</p>{% endif %}
+<table>
+  <tr><th>{{ t('web.incident.status') }}</th><td class="{{ 'resolved' if incident.status == 'resolved' else incident.severity }}">{{ t('slack.state.resolved' if incident.status == 'resolved' else 'slack.state.open') }}</td></tr>
+  <tr><th>{{ t('web.incident.started') }}</th><td>{{ incident.started_at | local }}</td></tr>
+  {% if incident.resolved_at %}<tr><th>{{ t('web.incident.resolved') }}</th><td>{{ incident.resolved_at | local }}</td></tr>{% endif %}
+  {% if incident.acked_by %}<tr><th>{{ t('web.incident.acked') }}</th><td>{{ incident.acked_by }}</td></tr>{% endif %}
+  {% if incident.generator_url %}<tr><th>{{ t('web.incident.rule') }}</th><td><a href="{{ incident.generator_url }}">{{ incident.generator_url }}</a></td></tr>{% endif %}
+</table>
+{% if incident.known_from_incident_id %}<p class="muted">{{ t('web.incident.known_before') }}<a href="/incidents/{{ incident.known_from_incident_id }}">Incident #{{ incident.known_from_incident_id }}</a>{{ t('web.incident.known_after') }}</p>{% endif %}
+{% if budget is not none or analyses %}
+<h2>{{ t('web.incident.ai') }}</h2>
+{% if budget is not none %}<p class="muted">{{ t('web.budget.line', spent='%.2f' | format(budget.spent_usd), budget='%.2f' | format(budget.budget_usd)) }}{% if budget.exhausted %}, {{ t('web.budget.exhausted') }}{% elif budget.spent_usd >= budget.budget_usd %}, {{ t('web.budget.cheaper') }}{% endif %}.</p>{% endif %}
+{% for run in analyses %}
+<h3 id="analysis-{{ run.id }}">{{ run.started_at | local }} · {{ run.status | analysis_status }}
+  <span class="muted">({{ t('web.incident.auto') if run.requested_by == 'auto' else t('web.incident.by', who=run.requested_by) }}{% if run.model %}, {{ run.model }}{% endif %}{% if run.cost_usd is not none %}, {{ '%.2f' | format(run.cost_usd) }} USD{% endif %})</span></h3>
+{% if run.status == 'failed' %}<p class="P1">{{ run.error or t('web.incident.unknown_error') }}</p>
+{% elif run.analysis %}
+{% set a = run.analysis %}
+{% if run.feedback %}<p class="muted">{{ t('web.incident.rated', verdict=t('web.feedback.helpful' if run.feedback == 'helpful' else 'web.feedback.not_helpful'), who=run.feedback_by) }}</p>{% endif %}
+<p><strong>{{ a.summary }}</strong></p>
+<table>
+  <tr><th>{{ t('web.incident.cause') }}</th><td>{{ a.cause }} <span class="muted">{{ t('web.incident.confidence', confidence=a.confidence | confidence) }}</span></td></tr>
+  <tr><th>{{ t('web.incident.evidence') }}</th><td>{% for e in a.evidence %}<div><code>{{ e.quote }}</code> <span class="muted">{{ e.source }}</span></div>{% else %}<span class="P1">{{ t('web.incident.no_evidence') }}</span>{% endfor %}
+    {% set note = run | evidence_note %}{% if note %}<div class="{{ 'muted' if run.verified else 'P1' }}">{{ note }}</div>{% endif %}</td></tr>
+  <tr><th>{{ t('web.incident.affected') }}</th><td>{{ a.affected }}</td></tr>
+  <tr><th>{{ t('web.incident.immediate') }}</th><td>{{ a.immediate_action }}</td></tr>
+  <tr><th>{{ t('web.incident.long_term') }}</th><td>{{ a.fix_suggestion }}</td></tr>
+  <tr><th>{{ t('web.incident.risk') }}</th><td>{{ a.risk }}</td></tr>
+</table>
+{% endif %}
+{% else %}<p class="muted">{{ t('web.incident.no_analysis') }}</p>{% endfor %}
+{% endif %}
+{% if fixes %}
+<h2>{{ t('web.incident.fixprs') }}</h2>
+<table>
+  {% for fix in fixes %}<tr><th>{{ fix.created_at | local }}</th><td><strong>{{ fix.repo }}</strong>: {{ fix.title }} · <span class="{{ 'P1' if fix.status == 'failed' else 'muted' }}">{{ fix.status }}</span>
+    {% if fix.approved_by %}<span class="muted">{{ t('web.incident.approved_by', who=fix.approved_by) }}{% if fix.approved_at %}{{ t('web.incident.approved_at', at=fix.approved_at | local) }}{% endif %}</span>{% endif %}
+    {% if fix.pr_url %}<div><a href="{{ fix.pr_url }}">{{ fix.branch }}</a></div>{% endif %}
+    {% if fix.error %}<div class="P1"><code>{{ fix.error }}</code></div>{% endif %}</td></tr>{% endfor %}
+</table>
+{% endif %}
+{% if actions %}
+<h2>{{ t('web.incident.actions') }}</h2>
+<table>
+  {% for job in actions %}<tr id="action-{{ job.id }}"><th>{{ job.created_at | local }}</th><td><strong>{{ job.runbook }}</strong> {{ t('web.incident.on_host', host=job.host) }}{% if job.params %} <code>{{ job.params }}</code>{% endif %}
+    · <span class="{{ 'P1' if job.status in ('failed', 'rejected') else 'muted' }}">{{ job.status }}</span>
+    {% if job.approved_by %}<span class="muted">{{ t('web.incident.approved_by', who=job.approved_by) }}{% if job.approved_at %}{{ t('web.incident.approved_at', at=job.approved_at | local) }}{% endif %}</span>{% endif %}
+    {% if job.summary %}<div><code>{{ job.summary }}</code></div>{% endif %}
+    {% if job.verify_status %}<div class="{{ 'P1' if job.verify_status == 'red' else 'muted' }}">{{ t('web.incident.health', status=job.verify_status) }}{% if job.verify_detail %} · {{ job.verify_detail }}{% endif %}</div>{% endif %}</td></tr>{% endfor %}
+</table>
+{% endif %}
+<h2>{{ t('web.incident.labels') }}</h2>
+<table>{% for key, value in incident.labels.items() | sort %}<tr><th>{{ key }}</th><td><code>{{ value }}</code></td></tr>{% endfor %}</table>
+<h2>{{ t('web.incident.history') }}</h2>
+<table>
+  {% for e in events %}<tr><th>{{ e.at | local }}</th><td>{{ e.kind }}{% if e.detail %} <span class="muted">{{ e.detail }}</span>{% endif %}</td></tr>{% endfor %}
+</table>
+{% endblock %}

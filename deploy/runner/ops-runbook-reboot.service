@@ -1,0 +1,8 @@
+[Unit]
+Description=ops-runner runbook: reboot the server
+
+[Service]
+Type=oneshot
+# Started only for an approved reboot (the ops service creates the job from the approval in Slack). --no-block: the
+# shutdown cancels this unit's own start job, so the command must not wait for it.
+ExecStart=/usr/bin/systemctl --no-block reboot

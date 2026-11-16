@@ -1,0 +1,284 @@
+// Agent on the app server: collects OTLP from the apps, Docker logs, journald and host/container metrics,
+// and ships everything to the ops server over Tailscale. Persistent queues survive an ops-server outage.
+
+// ---------- OTLP in (apps in the Docker network "coolify") ----------
+
+otelcol.receiver.otlp "apps" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    metrics = [otelcol.processor.batch.default.input]
+    traces  = [otelcol.processor.filter.noise.input]
+  }
+}
+
+// Health probes (Docker HEALTHCHECK, Coolify) hit the apps every few seconds and would dominate the span metrics.
+// Spring puts the route in the span name ("http get /actuator/health/**"), Next.js names its internal spans
+// "executing api route (app) /api/health" and sets http.target / url.path on the server span.
+otelcol.processor.filter "noise" {
+  error_mode = "ignore"
+
+  traces {
+    span = [
+      `IsMatch(name, "(?i)/(actuator|api/health)")`,
+      // Next.js emits a second, route-less server span per request ("next.bubble"); it would double every rate.
+      `attributes["next.bubble"] == true`,
+      `attributes["next.bubble"] == "true"`,
+      `IsMatch(attributes["http.url"], "^/(actuator|api/health)")`,
+      `IsMatch(attributes["http.target"], "^/(actuator|api/health)")`,
+      `IsMatch(attributes["url.path"], "^/(actuator|api/health)")`,
+    ]
+  }
+
+  output {
+    traces = [otelcol.connector.spanmetrics.default.input, otelcol.processor.tail_sampling.default.input]
+  }
+}
+
+// RED metrics from 100 % of the spans, before sampling drops any trace.
+otelcol.connector.spanmetrics "default" {
+  histogram {
+    explicit {
+      buckets = ["50ms", "100ms", "250ms", "500ms", "1s", "2s", "5s"]
+    }
+  }
+  output {
+    metrics = [otelcol.processor.batch.default.input]
+  }
+}
+
+// Keep all error traces and all slow traces, 10 % of the rest.
+otelcol.processor.tail_sampling "default" {
+  decision_wait = "10s"
+
+  policy {
+    name = "keep-errors"
+    type = "status_code"
+    status_code {
+      status_codes = ["ERROR"]
+    }
+  }
+
+  policy {
+    name = "keep-slow"
+    type = "latency"
+    latency {
+      threshold_ms = 1000
+    }
+  }
+
+  policy {
+    name = "sample-rest"
+    type = "probabilistic"
+    probabilistic {
+      sampling_percentage = 10
+    }
+  }
+
+  output {
+    traces = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.batch "default" {
+  output {
+    metrics = [otelcol.exporter.otlphttp.ops.input]
+    traces  = [otelcol.exporter.otlphttp.ops.input]
+    logs    = [otelcol.exporter.otlphttp.ops_logs.input]
+  }
+}
+
+otelcol.storage.file "queue" {
+  directory = "/var/lib/alloy/data/queue"
+}
+
+otelcol.exporter.otlphttp "ops" {
+  traces_endpoint  = "http://" + sys.env("OPS_SERVER") + ":10428/insert/opentelemetry/v1/traces"
+  metrics_endpoint = "http://" + sys.env("OPS_SERVER") + ":8428/opentelemetry/v1/metrics"
+
+  client {
+    endpoint    = "http://" + sys.env("OPS_SERVER") + ":4318"
+    compression = "gzip"
+  }
+
+  retry_on_failure {
+    enabled          = true
+    max_elapsed_time = "0s"
+  }
+
+  sending_queue {
+    enabled = true
+    storage = otelcol.storage.file.queue.handler
+  }
+}
+
+// Logs get their own exporter: the VL-Stream-Fields header only applies to VictoriaLogs.
+otelcol.exporter.otlphttp "ops_logs" {
+  logs_endpoint = "http://" + sys.env("OPS_SERVER") + ":9428/insert/opentelemetry/v1/logs"
+
+  client {
+    endpoint    = "http://" + sys.env("OPS_SERVER") + ":4318"
+    compression = "gzip"
+    headers     = {"VL-Stream-Fields" = "host,service,container"}
+  }
+
+  retry_on_failure {
+    enabled          = true
+    max_elapsed_time = "0s"
+  }
+
+  sending_queue {
+    enabled = true
+    storage = otelcol.storage.file.queue.handler
+  }
+}
+
+// ---------- Docker logs ----------
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "compose_service"
+  }
+  // service: the same name as service.name in the traces and as the label on the container metrics, and it stays
+  // the same across deploys. Coolify resources carry it as coolify.resourceName (core, admin-frontend, ...); for the
+  // rest (Coolify's own containers) it is the container name without the deploy time Coolify appends.
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*?)(-[0-9]{8}T[0-9]{6})?"
+    target_label  = "service"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_coolify_resourceName"]
+    regex         = "(.+)"
+    target_label  = "service"
+  }
+  // A Coolify preview deploy keeps the resource name of its app; it must not count as the app itself.
+  rule {
+    source_labels = ["__meta_docker_container_label_coolify_pullRequestId", "service"]
+    regex         = "([1-9][0-9]*);(.+)"
+    replacement   = "$2-pr-$1"
+    target_label  = "service"
+  }
+  // The Trivy client of ops-collect prints its whole JSON report; ops-collect reads it, the logs do not need it.
+  rule {
+    source_labels = ["__meta_docker_container_label_ops_collect"]
+    regex         = "trivy"
+    action        = "drop"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.containers.output
+  labels     = {"host" = sys.env("HOST_NAME")}
+  forward_to = [otelcol.receiver.loki.logs.receiver]
+}
+
+// ---------- journald (sshd, unattended-upgrades, kernel) ----------
+
+loki.source.journal "host" {
+  path          = "/var/log/journal"
+  labels        = {"host" = sys.env("HOST_NAME"), "container" = "journald"}
+  relabel_rules = loki.relabel.journal.rules
+  forward_to    = [otelcol.receiver.loki.logs.receiver]
+}
+
+// service is the syslog identifier (sshd, CRON, kernel, unattended-upgrade, ...), lines without one are "journald".
+// Not the systemd unit: every SSH login has its own session-N.scope, which would make a new service each time.
+loki.relabel "journal" {
+  forward_to = []
+
+  rule {
+    replacement  = "journald"
+    target_label = "service"
+  }
+  rule {
+    source_labels = ["__journal_syslog_identifier"]
+    regex         = "(.+)"
+    target_label  = "service"
+  }
+}
+
+otelcol.receiver.loki "logs" {
+  output {
+    logs = [otelcol.processor.batch.default.input]
+  }
+}
+
+// ---------- Host and container metrics ----------
+
+prometheus.exporter.unix "host" {
+  rootfs_path = "/host/rootfs"
+  procfs_path = "/host/proc"
+  sysfs_path  = "/host/sys"
+}
+
+prometheus.exporter.cadvisor "containers" {
+  docker_only = true
+  // Coolify gives every app its own set of labels (proxy routing, ...). Turned into metric labels they make
+  // cAdvisor drop those containers, so only the one that names the service is kept.
+  store_container_labels       = false
+  allowlisted_container_labels = ["coolify.resourceName", "coolify.pullRequestId"]
+}
+
+prometheus.scrape "host" {
+  targets         = prometheus.exporter.unix.host.targets
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.ops.receiver]
+}
+
+prometheus.scrape "containers" {
+  targets         = prometheus.exporter.cadvisor.containers.targets
+  scrape_interval = "15s"
+  forward_to      = [prometheus.relabel.containers.receiver]
+}
+
+// service on the container metrics, built like the one on the logs; the alert rules keep using `name`.
+prometheus.relabel "containers" {
+  forward_to = [prometheus.remote_write.ops.receiver]
+
+  rule {
+    source_labels = ["name"]
+    regex         = "(.*?)(-[0-9]{8}T[0-9]{6})?"
+    target_label  = "service"
+  }
+  rule {
+    source_labels = ["container_label_coolify_resourceName"]
+    regex         = "(.+)"
+    target_label  = "service"
+  }
+  rule {
+    source_labels = ["container_label_coolify_pullRequestId", "service"]
+    regex         = "([1-9][0-9]*);(.+)"
+    replacement   = "$2-pr-$1"
+    target_label  = "service"
+  }
+  rule {
+    regex  = "container_label_coolify_(resourceName|pullRequestId)"
+    action = "labeldrop"
+  }
+}
+
+prometheus.remote_write "ops" {
+  external_labels = {"host" = sys.env("HOST_NAME")}
+
+  endpoint {
+    url = "http://" + sys.env("OPS_SERVER") + ":8428/api/v1/write"
+  }
+}

@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "runbooks": {
+    "container_restart": {
+      "title": {
+        "en": "Restart container",
+        "de": "Container neu starten"
+      },
+      "description": {
+        "en": "Restarts an application through the Coolify API.",
+        "de": "Startet eine Anwendung über die Coolify-API neu."
+      },
+      "risk": "medium",
+      "hosts": [
+        "app-1"
+      ],
+      "verify": "health",
+      "params": {
+        "application": {
+          "type": "string",
+          "pattern": "[a-z0-9]{16,40}",
+          "description": "Coolify application UUID"
+        }
+      },
+      "rollback": {
+        "en": "Check the application in Coolify. If the restart is the cause, go back to the previous commit with redeploy_previous.",
+        "de": "Anwendung in Coolify prüfen; ist der Neustart die Ursache, mit redeploy_previous auf den vorigen Commit zurückgehen."
+      }
+    },
+    "redeploy_previous": {
+      "title": {
+        "en": "Redeploy the previous commit",
+        "de": "Vorigen Commit erneut ausrollen"
+      },
+      "description": {
+        "en": "Deploys the commit of the last successful deployment before the current one, through Coolify.",
+        "de": "Rollt den Commit der letzten erfolgreichen Auslieferung vor der aktuellen über Coolify aus."
+      },
+      "risk": "high",
+      "hosts": [
+        "app-1"
+      ],
+      "verify": "health",
+      "params": {
+        "application": {
+          "type": "string",
+          "pattern": "[a-z0-9]{16,40}",
+          "description": "Coolify application UUID"
+        }
+      },
+      "rollback": {
+        "en": "In Coolify under Deployments, go back to the commit before and look for the bug in the new commit.",
+        "de": "In Coolify unter Deployments auf den Commit davor zurückgehen (Rollback) und den Fehler im neuen Commit suchen."
+      }
+    },
+    "image_prune": {
+      "title": {
+        "en": "Remove unused Docker images",
+        "de": "Ungenutzte Docker-Images entfernen"
+      },
+      "description": {
+        "en": "docker image prune --all --force --filter until=168h: removes only images without a container that are older than 7 days.",
+        "de": "docker image prune --all --force --filter until=168h: entfernt nur Images ohne Container, die älter als 7 Tage sind."
+      },
+      "risk": "low",
+      "hosts": [
+        "*"
+      ],
+      "verify": "health",
+      "params": {},
+      "rollback": {
+        "en": "Missing images are rebuilt or pulled on the next deploy; redeploy the affected application in Coolify.",
+        "de": "Fehlende Images werden beim nächsten Deploy neu gebaut oder gezogen; in Coolify die betroffene Anwendung neu ausrollen."
+      }
+    },
+    "apt_security": {
+      "title": {
+        "en": "Apply security updates now",
+        "de": "Security-Updates jetzt einspielen"
+      },
+      "description": {
+        "en": "Starts unattended-upgrade immediately; the security archives from the patch configuration apply.",
+        "de": "Startet unattended-upgrade sofort; es gelten die Security-Archive aus der Patch-Konfiguration."
+      },
+      "risk": "medium",
+      "hosts": [
+        "*"
+      ],
+      "verify": "health",
+      "params": {},
+      "rollback": {
+        "en": "Read /var/log/apt/history.log and downgrade the affected package with apt; then check the services.",
+        "de": "/var/log/apt/history.log lesen und das betroffene Paket per apt auf die vorige Version setzen; danach Dienste prüfen."
+      }
+    },
+    "reboot_scheduled": {
+      "title": {
+        "en": "Scheduled reboot",
+        "de": "Geplanter Neustart"
+      },
+      "description": {
+        "en": "Reboots the server.",
+        "de": "Startet den Server neu."
+      },
+      "risk": "high",
+      "hosts": [
+        "*"
+      ],
+      "verify": "reboot",
+      "params": {
+        "reboot_request": {
+          "type": "integer",
+          "min": 1,
+          "max": 2147483647,
+          "description": "reboot_request id of the approval"
+        }
+      },
+      "rollback": {
+        "en": "Check the server in the Hetzner console (rescue mode or manual reboot); the app containers have a restart policy.",
+        "de": "Server in der Hetzner-Konsole prüfen (Rescue oder Neustart von Hand); die App-Container haben eine Restart-Policy."
+      },
+      "proposable": false
+    }
+  }
+}

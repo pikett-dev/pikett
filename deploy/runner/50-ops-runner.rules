@@ -1,0 +1,20 @@
+// The ops-runner may start exactly these units and nothing else. They run as root outside its sandbox.
+polkit.addRule(function(action, subject) {
+    if (subject.user !== "ops-runner") {
+        return polkit.Result.NOT_HANDLED;
+    }
+    if (action.id !== "org.freedesktop.systemd1.manage-units") {
+        return polkit.Result.NOT_HANDLED;
+    }
+    var allowed = [
+        "ops-runbook-image-prune.service",
+        "ops-runbook-apt-security.service",
+        "ops-runbook-reboot.service"
+    ];
+    // `systemctl start --wait` pins the unit first (verb "ref"); both only concern these three units.
+    var verb = action.lookup("verb");
+    if ((verb === "start" || verb === "ref") && allowed.indexOf(action.lookup("unit")) !== -1) {
+        return polkit.Result.YES;
+    }
+    return polkit.Result.NOT_HANDLED;
+});

@@ -1,0 +1,7 @@
+# /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml.local, merged over the package's file.
+# INPUT covers SSH and the host; DOCKER-USER covers the ports Docker publishes (Coolify's proxy on 80/443), which
+# do not pass INPUT.
+api_url: http://127.0.0.1:8086/  # CrowdSec's local API, moved off 8080 (config.yaml.local)
+iptables_chains:
+  - INPUT
+  - DOCKER-USER

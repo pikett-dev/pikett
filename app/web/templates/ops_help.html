@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "ops_macros.html" import help_body %}
+{% set nav = 'help' %}
+{% block title %}{{ t('web.nav.help') }} · {{ BRAND }}{% endblock %}
+{% block content %}
+<div class="help-page">
+<h2 style="font-size:1.6rem;margin-top:28px">{{ t('web.help.title') }}</h2>
+<p class="muted">{{ t('web.help.intro_before') }}<a href="/ops">{{ t('web.nav.overview') }}</a>{{ t('web.help.intro_after') }}</p>
+{% for title, checks in sections %}
+<h2>{{ title }}</h2>
+{% for name, label in checks %}
+<section id="{{ name }}" class="card">
+  <h3 style="font-size:1rem;margin-bottom:8px">{{ label }}</h3>
+  {{ help_body(HELP[name]) }}
+</section>
+{% endfor %}
+{% endfor %}
+</div>
+{% endblock %}

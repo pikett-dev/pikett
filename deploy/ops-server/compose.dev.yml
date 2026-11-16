@@ -1,0 +1,52 @@
+# The ops stack on one machine, for trying it locally (Docker Desktop). Used by dev/compose.sh together with
+# compose.yml; it swaps the production image and secrets for local ones and adds ntfy and the Alloy agent.
+# Your applications are not part of it.
+name: pikett-stack
+
+services:
+  # ---- ops-server side, local variants ----------------------------------------------------------------
+  ops-service:
+    build:
+      context: ../..
+    env_file: !override
+      - ../../dev/ops-service.env
+    depends_on:
+      - ntfy
+
+  # Receives the pushes locally: http://localhost:8099/<topic>
+  ntfy:
+    image: binwiederhier/ntfy:v2.32.0@sha256:59250e1d8be2ee2186c4560322f625faef22ace380331f05b63f8842dbd62602
+    command: serve
+    ports:
+      - "127.0.0.1:8099:80"
+
+  # ---- agent ---------------------------------------------------------------------------------------------
+  # Alloy watches this Docker host (containers, logs, host metrics) and takes OTLP on localhost:4318. It reaches
+  # the backends through the ports they publish on the host, like on the real app server.
+  alloy:
+    image: grafana/alloy:v1.20.1@sha256:2aa2099af76c0098d4af7a4d6e48f86cb66dc1a000222ad927a1c67c6542d13f
+    restart: unless-stopped
+    command:
+      - run
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --stability.level=public-preview
+      - /etc/alloy/config.alloy
+    cgroup: host  # see deploy/app-host/compose.yml
+    environment:
+      OPS_SERVER: host.docker.internal
+      HOST_NAME: dev-mac
+    ports:
+      - "127.0.0.1:4318:4318"
+      - "127.0.0.1:12345:12345"
+    volumes:
+      - ../app-host/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /:/host/rootfs:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+
+volumes:
+  alloy-data:

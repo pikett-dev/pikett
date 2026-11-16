@@ -1,0 +1,28 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":dependencyDashboard", "docker:pinDigests", "helpers:pinGitHubActionDigests"],
+  "minimumReleaseAge": "3 days",
+  "labels": ["dependencies"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "The Trivy client image the collector runs; it must match the trivy-server in deploy/ops-server/compose.yml",
+      "managerFilePatterns": ["/^deploy/host-agent/ops-collect\\.env\\.example$/", "/^deploy/host-agent/ops-collect\\.py$/"],
+      "matchStrings": ["aquasec/trivy:(?<currentValue>[0-9][0-9.]*)(@(?<currentDigest>sha256:[a-f0-9]+))?"],
+      "depNameTemplate": "aquasec/trivy",
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Trivy server and clients move together, or the clients cannot talk to the server",
+      "matchPackageNames": ["aquasec/trivy"],
+      "groupName": "Trivy"
+    },
+    {
+      "description": "drain3 is pinned on purpose (app/agent/fingerprints.py reads its internals, see pyproject.toml)",
+      "matchPackageNames": ["drain3"],
+      "enabled": false
+    }
+  ]
+}

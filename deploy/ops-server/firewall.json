@@ -1,0 +1,22 @@
+[
+  {
+    "description": "SSH for bootstrap only (key-only). Remove this rule once Tailscale is up.",
+    "direction": "in",
+    "protocol": "tcp",
+    "port": "22",
+    "source_ips": ["0.0.0.0/0", "::/0"]
+  },
+  {
+    "description": "Tailscale direct connections",
+    "direction": "in",
+    "protocol": "udp",
+    "port": "41641",
+    "source_ips": ["0.0.0.0/0", "::/0"]
+  },
+  {
+    "description": "ICMP",
+    "direction": "in",
+    "protocol": "icmp",
+    "source_ips": ["0.0.0.0/0", "::/0"]
+  }
+]

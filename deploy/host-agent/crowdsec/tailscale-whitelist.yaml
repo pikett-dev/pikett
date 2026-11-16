@@ -1,0 +1,10 @@
+# /etc/crowdsec/parsers/s02-enrich/tailscale-whitelist.yaml.
+# Never ban an address from the Tailscale network: the team and the servers reach SSH and the ops ports only from
+# there, so a ban would lock us out of our own servers.
+name: ops/tailscale-whitelist
+description: "Never ban the Tailscale network of the team"
+whitelist:
+  reason: "Tailscale (team and servers)"
+  cidr:
+    - "100.64.0.0/10"
+    - "fd7a:115c:a1e0::/48"

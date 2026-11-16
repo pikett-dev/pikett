@@ -1,0 +1,57 @@
+# Host-level rules. Metrics come from Alloy (prometheus.exporter.unix / cadvisor) with the label host=<name>.
+groups:
+  - name: host
+    interval: 30s
+    rules:
+      - alert: AppServerSilent
+        # One app server for now; with more hosts, alert per host label instead.
+        expr: absent_over_time(node_uname_info[3m])
+        # Metrics are missing for a moment after every start of the ops server; a real outage is still caught.
+        for: 1m
+        labels:
+          severity: P1
+        annotations:
+          summary: "No metrics from the app server for 3 minutes"
+
+      - alert: DiskAlmostFull
+        expr: |
+          (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}
+             / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}) > 0.85
+        for: 10m
+        labels:
+          severity: P2
+        annotations:
+          summary: "Disk {{ $labels.mountpoint }} on {{ $labels.host }} is above 85%"
+
+      - alert: LowMemory
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 5m
+        labels:
+          severity: P2
+        annotations:
+          summary: "Less than 10% memory available on {{ $labels.host }}"
+
+      - alert: ContainerGone
+        # Coolify names containers "<id>-<timestamp>" and replaces them on every deploy, so the timestamp is cut off
+        # to get one name per app. max() keeps the newest sample when an app has two instances in a row, or after
+        # Alloy was restarted (every restart starts new series). Without both a deploy would page as "gone".
+        # Short-lived containers without a timestamp (Coolify's per-deploy helper container, named after the
+        # deployment UUID, lives about a minute) are ignored: an app counts only after 20 samples (~10 min) in the
+        # last hour.
+        expr: |
+          (
+            time() - max by (host, app) (
+              label_replace(container_last_seen{name=~".+"}, "app", "$1", "name", "^(.+?)(?:-[0-9]{8}T[0-9]{6})?$")
+            ) > 120
+          )
+          and on (host, app)
+          (
+            sum by (host, app) (
+              label_replace(count_over_time(container_last_seen{name=~".+"}[1h]), "app", "$1", "name", "^(.+?)(?:-[0-9]{8}T[0-9]{6})?$")
+            ) > 20
+          )
+        for: 1m
+        labels:
+          severity: P1
+        annotations:
+          summary: 'Container {{ index $labels "app" }} on {{ $labels.host }} not seen for 2 minutes'

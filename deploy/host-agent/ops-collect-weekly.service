@@ -1,0 +1,13 @@
+[Unit]
+Description=Collect weekly security facts for the ops service
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/ops-collect.env
+# $WEEKLY_KINDS (without braces) is split into one argument per kind.
+ExecStart=/usr/bin/python3 /opt/ops-collect/ops-collect.py $WEEKLY_KINDS
+Nice=19
+IOSchedulingClass=idle
+TimeoutStartSec=45min

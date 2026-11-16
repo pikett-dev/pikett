@@ -1,0 +1,58 @@
+# Patch window: the same files as deploy/host-agent/patching, for the write_files of a cloud-init.
+# Generated from those files; tests/test_patching_files.py fails when the two drift apart.
+# packages: unattended-upgrades, needrestart. Append these entries to write_files.
+- path: /etc/apt/apt.conf.d/20auto-upgrades
+  permissions: "0644"
+  content: |
+    // /etc/apt/apt.conf.d/20auto-upgrades: refresh the package lists and run unattended-upgrade every day.
+    APT::Periodic::Update-Package-Lists "1";
+    APT::Periodic::Unattended-Upgrade "1";
+    APT::Periodic::AutocleanInterval "7";
+- path: /etc/apt/apt.conf.d/52ops-unattended-upgrades
+  permissions: "0644"
+  content: |
+    // /etc/apt/apt.conf.d/52ops-unattended-upgrades (ops).
+    // Only the security pockets; Ubuntu's 50unattended-upgrades also lists the release pocket, so the list is cleared
+    // first (apt config lists add up across files otherwise).
+    #clear Unattended-Upgrade::Allowed-Origins;
+    Unattended-Upgrade::Allowed-Origins {
+        "${distro_id}:${distro_codename}-security";
+        "${distro_id}ESMApps:${distro_codename}-apps-security";
+        "${distro_id}ESM:${distro_codename}-infra-security";
+    };
+    // A reboot is asked for in Slack on the test server; the ops server reboots itself on Sunday 05:00.
+    Unattended-Upgrade::Automatic-Reboot "false";
+    Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+    Unattended-Upgrade::Remove-Unused-Dependencies "false";
+    Unattended-Upgrade::SyslogEnable "true";
+- path: /etc/needrestart/conf.d/ops.conf
+  permissions: "0644"
+  content: |
+    # /etc/needrestart/conf.d/ops.conf (ops).
+    # Restart services that use an updated library without asking (also when apt runs unattended).
+    $nrconf{restart} = 'a';
+    # Never restart the container runtime on its own: that would stop every app container. needrestart lists it
+    # instead, the collector reports it, and the daily digest names it.
+    $nrconf{override_rc}->{qr(^docker\.service$)} = 0;
+    $nrconf{override_rc}->{qr(^containerd\.service$)} = 0;
+    # Tailscale carries SSH and the telemetry; restart it only with the reboot.
+    $nrconf{override_rc}->{qr(^tailscaled\.service$)} = 0;
+    # Kernel updates are handled by reboot-required and the Slack question, not by a dialog.
+    $nrconf{kernelhints} = 0;
+- path: /etc/systemd/system/apt-daily.timer.d/ops-window.conf
+  permissions: "0644"
+  content: |
+    # /etc/systemd/system/apt-daily.timer.d/ops-window.conf: refresh the package lists at 02:30 (default: random).
+    [Timer]
+    OnCalendar=
+    OnCalendar=*-*-* 02:30 Europe/Vienna
+    RandomizedDelaySec=0
+- path: /etc/systemd/system/apt-daily-upgrade.timer.d/ops-window.conf
+  permissions: "0644"
+  content: |
+    # /etc/systemd/system/apt-daily-upgrade.timer.d/ops-window.conf: the patch window, daily 03:00 Vienna time.
+    # The collector reports the result at 03:40 (ops-collect-daily.timer).
+    [Timer]
+    OnCalendar=
+    OnCalendar=*-*-* 03:00 Europe/Vienna
+    RandomizedDelaySec=0

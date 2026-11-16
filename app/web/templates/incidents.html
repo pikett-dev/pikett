@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% set nav = "incidents" %}
+{% block title %}{{ t('web.incidents.title') }} · {{ BRAND }}{% endblock %}
+{% block content %}
+<h1>{{ t('web.incidents.title') }}</h1>
+{% if not incidents %}<p class="muted">{{ t('web.incidents.none') }}</p>{% else %}
+<table>
+  <thead><tr><th>{{ t('web.incidents.level') }}</th><th>{{ t('web.incidents.alert') }}</th><th>{{ t('web.incidents.started') }}</th><th>{{ t('web.incidents.status') }}</th></tr></thead>
+  <tbody>
+  {% for i in incidents %}
+    <tr>
+      <td class="{{ i.severity }}">{{ i.severity }}</td>
+      <td><a href="/incidents/{{ i.id }}">{{ i.title }}</a></td>
+      <td>{{ i.started_at | local }}</td>
+      <td class="{{ 'resolved' if i.status == 'resolved' else i.severity }}">{{ t('slack.state.resolved' if i.status == 'resolved' else 'slack.state.open') }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

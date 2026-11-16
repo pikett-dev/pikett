@@ -1,0 +1,8 @@
+# /etc/crowdsec/acquis.d/coolify-proxy.yaml (test server only): read the access log of Coolify's Traefik
+# proxy from Docker, so attacks on the web services are seen too. Needs access logs on in the proxy configuration
+# (Coolify: Servers > Proxy, `--accesslog=true`) and `cscli collections install crowdsecurity/traefik`.
+source: docker
+container_name:
+  - coolify-proxy
+labels:
+  type: traefik

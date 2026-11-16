@@ -1,0 +1,183 @@
+# Telemetry backends on the ops server. Ports are bound to the Tailscale IP only (TAILSCALE_IP in .env),
+# so nothing is reachable from the public internet.
+# mem_limit is a ceiling per service so that one of them cannot take the whole server down. Measured at idle the
+# whole stack needs about 0.8 GB; the limits leave room to grow on a 4 GB server (Hetzner CPX22).
+name: ops
+
+services:
+  victoria-logs:
+    restart: unless-stopped
+    mem_limit: 512m
+    image: victoriametrics/victoria-logs:v1.53.0@sha256:251121fa882af99b95ba0c230a4a2f412ea602d2698c64a96c58dc9842bb755d
+    command:
+      - -storageDataPath=/vlogs
+      - -retentionPeriod=30d
+      - -httpListenAddr=:9428
+    ports:
+      - "${TAILSCALE_IP:?set TAILSCALE_IP}:9428:9428"
+    volumes:
+      - vlogs:/vlogs
+
+  victoria-metrics:
+    restart: unless-stopped
+    mem_limit: 768m
+    image: victoriametrics/victoria-metrics:v1.154.0@sha256:4bd592341587d669b7f57d54bbb82bd21ac8675f4e24234b7703a7c0f85197d8
+    command:
+      - -storageDataPath=/storage
+      - -retentionPeriod=90d
+      - -httpListenAddr=:8428
+    ports:
+      - "${TAILSCALE_IP:?set TAILSCALE_IP}:8428:8428"
+    volumes:
+      - vmetrics:/storage
+
+  victoria-traces:
+    restart: unless-stopped
+    mem_limit: 384m
+    image: victoriametrics/victoria-traces:v0.12.0@sha256:80919fcc85cc6dd87f598d20ccf42d0ab1120de8f25d4dcf08c5ea2515a496ba
+    command:
+      - -storageDataPath=/vtraces
+      - -retentionPeriod=14d
+      - -httpListenAddr=:10428
+      - -servicegraph.enableTask
+    ports:
+      - "${TAILSCALE_IP:?set TAILSCALE_IP}:10428:10428"
+    volumes:
+      - vtraces:/vtraces
+
+  vmalert:
+    restart: unless-stopped
+    mem_limit: 128m
+    image: victoriametrics/vmalert:v1.154.0@sha256:f11d77f9ff68dfd63c871d0e59ae7b479f9c3fd0e8a685fef690fb88b794d938
+    depends_on:
+      - victoria-metrics
+    command:
+      - -datasource.url=http://victoria-metrics:8428
+      - -remoteWrite.url=http://victoria-metrics:8428
+      - -notifier.url=${ALERT_NOTIFIER_URL:-http://ops-service:8030}
+      # The token is read from a file, so it does not show up in `ps` or `docker inspect`. Same value as ALERT_TOKEN.
+      - -notifier.bearerTokenFile=/run/secrets/alert-token
+      - -rule=/rules/*.yml
+      - -configCheckInterval=30s  # picks up rule changes without a restart
+    secrets:
+      - alert-token
+    volumes:
+      - ../vmalert/rules:/rules:ro
+
+  # External uptime probes for the app server. The slim variant of the v2 line, pinned by digest so Renovate proposes
+  # each rebuild: the full image bundles Chromium, whose actively exploited CVEs the KEV check reported. Only HTTP
+  # and ping monitors are in use, never the browser engine. The slim image has no embedded
+  # MariaDB, so the data lives in kuma-db below (the database settings are documented in the upstream wiki, page
+  # "Environment Variables"). The env vars win over /app/data/db-config.json and rewrite it at each start, so the old
+  # image alone does not bring back the embedded data.
+  uptime-kuma:
+    restart: unless-stopped
+    mem_limit: 384m
+    image: louislam/uptime-kuma:2-slim@sha256:3c3a54a7338a41129163d933295076424e51b07f861a4cdf96a68b50bdde7a73
+    depends_on:
+      kuma-db:
+        condition: service_healthy
+    environment:
+      UPTIME_KUMA_DB_TYPE: mariadb
+      UPTIME_KUMA_DB_HOSTNAME: kuma-db
+      UPTIME_KUMA_DB_PORT: "3306"
+      UPTIME_KUMA_DB_NAME: kuma
+      UPTIME_KUMA_DB_USERNAME: kuma
+      UPTIME_KUMA_DB_PASSWORD: ${KUMA_DB_PASSWORD:?set KUMA_DB_PASSWORD}
+    ports:
+      - "${TAILSCALE_IP:?set TAILSCALE_IP}:3001:3001"
+    volumes:
+      - uptime-kuma:/app/data
+
+  # Database of Uptime Kuma. The slim Kuma image has no embedded MariaDB, so Kuma talks to this one over the
+  # ops network; no port is published. Kuma gets its address and login through UPTIME_KUMA_DB_* above.
+  kuma-db:
+    restart: unless-stopped
+    mem_limit: 256m
+    image: mariadb:11.8@sha256:d36f18d65a0459510b8b0f643b226a6d299e3206486e2b64ff20754a6d291707
+    environment:
+      MARIADB_DATABASE: kuma
+      MARIADB_USER: kuma
+      MARIADB_PASSWORD: ${KUMA_DB_PASSWORD:?set KUMA_DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${KUMA_DB_ROOT_PASSWORD:?set KUMA_DB_ROOT_PASSWORD}
+      MARIADB_ROOT_HOST: localhost  # root only inside this container; no other container on the network may log in as root
+      MARIADB_AUTO_UPGRADE: "1"
+    volumes:
+      - kuma-db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      retries: 10
+
+  # Central vulnerability database for the Trivy clients on both servers (deploy/host-agent, kind `trivy`), so the
+  # app server never downloads it. Clients run the same image tag; Renovate keeps the two in step.
+  trivy-server:
+    restart: unless-stopped
+    mem_limit: 512m
+    image: aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+    command: ["server", "--listen", "0.0.0.0:4954", "--cache-dir", "/cache"]
+    environment:
+      TRIVY_TOKEN: ${TRIVY_TOKEN:-}  # set it in .env; empty means any Tailscale peer may use the server
+    ports:
+      - "${TAILSCALE_IP:?set TAILSCALE_IP}:4954:4954"
+    volumes:
+      - trivy-cache:/cache
+
+  ops-db:
+    restart: unless-stopped
+    mem_limit: 256m
+    image: postgres:18@sha256:2ea8630df176ad090ec92136dee850397c5af8781e4bcf2e4162593691c61bbc
+    environment:
+      POSTGRES_DB: ops
+      POSTGRES_USER: ops
+      POSTGRES_PASSWORD: ${OPS_DB_PASSWORD:?set OPS_DB_PASSWORD}
+    volumes:
+      - ops-db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "ops"]
+      interval: 10s
+      retries: 10
+
+  ops-service:
+    restart: unless-stopped
+    mem_limit: 256m
+    image: ${OPS_IMAGE:?set OPS_IMAGE}
+    depends_on:
+      ops-db:
+        condition: service_healthy
+    env_file: ops-service.env
+    # A read-only root file system without capabilities. The OSV scan (git clone, osv-scanner) is the only thing
+    # that writes: it works in the osv-work volume (HOME and TMPDIR), small files go to /tmp in memory.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:size=64m
+    environment:
+      HOME: /var/lib/pikett/work
+      TMPDIR: /var/lib/pikett/work
+      # Bearer token of the alert webhook; the same value is in ./alert-token for vmalert. Empty: no token required.
+      ALERT_TOKEN: ${ALERT_TOKEN:-}
+      DATABASE_URL: postgresql+asyncpg://ops:${OPS_DB_PASSWORD}@ops-db:5432/ops
+      VICTORIA_LOGS_URL: http://victoria-logs:9428
+      VICTORIA_METRICS_URL: http://victoria-metrics:8428
+      VICTORIA_TRACES_URL: http://victoria-traces:10428
+    ports:
+      - "${TAILSCALE_IP:?set TAILSCALE_IP}:8030:8030"
+    volumes:
+      - osv-work:/var/lib/pikett/work
+
+# `file:` secrets fail with a clear error when the file is missing; a bind mount would create a directory instead.
+secrets:
+  alert-token:
+    file: ./alert-token
+
+volumes:
+  ops-db:
+  osv-work:
+  vlogs:
+  vmetrics:
+  vtraces:
+  uptime-kuma:
+  kuma-db:
+  trivy-cache:

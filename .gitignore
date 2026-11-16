@@ -1,0 +1,33 @@
+# Python and tool caches
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets: never commit real values. Only *.example files with placeholders belong in the repo.
+.env
+.env.*
+!.env.example
+*.env
+!*.env.example
+*.pem
+*.key
+*.p12
+*-seed
+runner-signing-seed
+job-signing.key
+
+# Editors and local assistants
+.DS_Store
+.idea/
+.vscode/
+.serena/
+.worktrees/
+.claude/settings.local.json
+
+# Token files (for example deploy/ops-server/alert-token, read by vmalert). Never commit them.
+*-token
+*.token
+!*-token.example
+!*.token.example

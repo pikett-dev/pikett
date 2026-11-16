@@ -1,0 +1,118 @@
+// Example Tailscale policy for a Pikett installation. HuJSON: comments and trailing commas are allowed.
+//
+// Why this file exists: the Pikett web UI has no login, and VictoriaLogs, VictoriaMetrics and VictoriaTraces accept
+// reads and writes without one. The only access control for them is the tailnet policy. Without it every device in
+// your tailnet can read your logs, post fake alerts and open the web UI.
+//
+// How to use it (a human does this in the Tailscale admin console, Access controls):
+//   1. Replace the e-mail addresses in "groups" with the people who may operate Pikett.
+//   2. Tag the servers: the ops server with tag:pikett-ops, every app server with tag:pikett-app
+//      (provision.sh advertises tag:pikett-ops by default; the auth key you use must be allowed to set it).
+//   3. In "tests" at the end, replace alice@example.com with a real member of group:pikett-team. The policy is
+//      refused when a test fails, and the test for a person who is not in the group fails.
+//   4. Merge these sections into your policy. If your policy has other rules, keep them: access rules are additive,
+//      and an existing broad rule such as "src": ["*"], "dst": ["*"] still opens everything. Remove it once the
+//      rules below cover what your team needs. Then check that the "tests" at the end pass.
+//
+// Syntax: https://tailscale.com/kb/1337/policy-syntax (grants are the current form; "acls" is the legacy form).
+{
+	"groups": {
+		"group:pikett-team": [
+			"alice@example.com",
+			"bob@example.com",
+		],
+	},
+
+	"tagOwners": {
+		"tag:pikett-ops": ["group:pikett-team"],
+		"tag:pikett-app": ["group:pikett-team"],
+		"tag:pikett-ci": ["group:pikett-team"],
+	},
+
+	"grants": [
+		// App servers -> ops server: telemetry from Alloy, and the service API for host reports and the runner.
+		{
+			"src": ["tag:pikett-app"],
+			"dst": ["tag:pikett-ops"],
+			"ip": [
+				"tcp:9428",  // VictoriaLogs
+				"tcp:8428",  // VictoriaMetrics
+				"tcp:10428", // VictoriaTraces
+				"tcp:8030",  // Pikett service: /api/v1/host-reports (collector) and /api/v1/runner (runner)
+				"tcp:4954",  // Trivy server: the collector's Trivy clients (TRIVY_SERVER in ops-collect.env)
+			],
+		},
+
+		// The team -> ops server: the web UI, Uptime Kuma and SSH.
+		{
+			"src": ["group:pikett-team"],
+			"dst": ["tag:pikett-ops"],
+			"ip": [
+				"tcp:8030", // Pikett web UI
+				"tcp:3001", // Uptime Kuma
+				"tcp:22",   // SSH
+			],
+		},
+
+		// The team -> app servers: SSH (for the collector, runner and Alloy installs, and for looking around).
+		{
+			"src": ["group:pikett-team"],
+			"dst": ["tag:pikett-app"],
+			"ip": ["tcp:22"],
+		},
+
+		// Optional: a CI runner that joins the tailnet with tag:pikett-ci and deploys over SSH (the pipeline key runs
+		// only /usr/local/bin/ops-deploy, see docs/operating.md). Delete this rule and the tag if you deploy by hand.
+		{
+			"src": ["tag:pikett-ci"],
+			"dst": ["tag:pikett-ops"],
+			"ip": ["tcp:22"],
+		},
+
+		// Optional: the ops server reads the Coolify API on an app server (COOLIFY_URL) for deploy history, the
+		// backup check and the version check. Delete this rule if COOLIFY_URL is empty or Coolify is not on an app
+		// server. The token it uses should be read-only.
+		{
+			"src": ["tag:pikett-ops"],
+			"dst": ["tag:pikett-app"],
+			"ip": ["tcp:8000"],
+		},
+	],
+
+	// Everything else is denied: app servers cannot reach each other or the team's devices, and nothing but the rules
+	// above reaches the ops server.
+
+	// If you use Tailscale SSH (tailscale up --ssh) instead of the normal SSH daemon, add an "ssh" rule as well; the
+	// "tcp:22" grants above are still needed on top of it. Check mode needs a human at the keyboard, so use "accept"
+	// only for the accounts you trust:
+	//
+	// "ssh": [
+	//   {
+	//     "action": "accept",
+	//     "src": ["group:pikett-team"],
+	//     "dst": ["tag:pikett-ops", "tag:pikett-app"],
+	//     "users": ["root"],
+	//   },
+	// ],
+
+	// The policy is rejected when one of these fails, so a later edit cannot silently open a port.
+	"tests": [
+		{
+			"src": "tag:pikett-app",
+			"proto": "tcp",
+			"accept": [
+				"tag:pikett-ops:9428",
+				"tag:pikett-ops:8428",
+				"tag:pikett-ops:10428",
+				"tag:pikett-ops:8030",
+			],
+			"deny": ["tag:pikett-ops:22", "tag:pikett-ops:3001"],
+		},
+		{
+			"src": "alice@example.com",
+			"proto": "tcp",
+			"accept": ["tag:pikett-ops:8030", "tag:pikett-ops:3001", "tag:pikett-app:22"],
+			"deny": ["tag:pikett-ops:9428", "tag:pikett-ops:8428", "tag:pikett-ops:10428"],
+		},
+	],
+}

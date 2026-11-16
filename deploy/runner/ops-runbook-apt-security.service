@@ -1,0 +1,10 @@
+[Unit]
+Description=ops-runner runbook: install security updates now
+
+[Service]
+Type=oneshot
+# The archives that unattended-upgrade may use are set in /etc/apt/apt.conf.d/52ops-unattended-upgrades (security only).
+ExecStart=/usr/bin/unattended-upgrade
+StandardOutput=truncate:/run/ops-runbook/apt-security.log
+StandardError=inherit
+TimeoutStartSec=25min  # shorter than the runner's wait (28 min) and the service's 45 min limit

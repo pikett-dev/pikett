@@ -1,0 +1,10 @@
+[Unit]
+Description=ops-runner runbook: remove unused Docker images
+
+[Service]
+Type=oneshot
+# Only images without a container that are older than 7 days. The runner starts this unit, it cannot change it.
+ExecStart=/usr/bin/docker image prune --all --force --filter until=168h
+StandardOutput=truncate:/run/ops-runbook/image-prune.log
+StandardError=inherit
+TimeoutStartSec=15min

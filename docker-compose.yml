@@ -1,0 +1,35 @@
+# Local development stack (Postgres for the ops service). Compose project name: pikett.
+name: pikett
+
+services:
+  ops-db:
+    image: postgres:18@sha256:2ea8630df176ad090ec92136dee850397c5af8781e4bcf2e4162593691c61bbc
+    environment:
+      POSTGRES_DB: ops
+      POSTGRES_USER: ops
+      POSTGRES_PASSWORD: ops
+    ports:
+      - "5436:5432"
+    volumes:
+      - ops-db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "ops"]
+      interval: 5s
+      retries: 10
+
+  ops-service:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ops:ops@ops-db:5432/ops
+    ports:
+      - "8030:8030"
+    depends_on:
+      ops-db:
+        condition: service_healthy
+
+volumes:
+  ops-db:
+    name: ops_ops-db

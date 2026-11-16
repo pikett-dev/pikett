@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% from "ops_macros.html" import badge %}
+{% set nav = 'history' %}
+{% block title %}{{ t('web.action.title', runbook=job.runbook) }} · {{ BRAND }}{% endblock %}
+{% block content %}
+<p style="margin-top:24px"><a href="/ops/history?kind=action">{{ t('web.action.back') }}</a></p>
+<h1 style="font:600 2rem/1.15 Georgia,serif">{{ t('web.action.heading', title=book_title, host=job.host) }}</h1>
+<dl class="facts">
+  <dt>{{ t('web.action.state') }}</dt><dd>{{ badge(status) }} <span>{{ label('web.action_status', job.status) }}</span></dd>
+  <dt>{{ t('web.action.runbook') }}</dt><dd><code>{{ job.runbook }}</code>{% if book %}, {{ label('actions.risk', book.risk) }}. {{ book_description }}{% endif %}</dd>
+  <dt>{{ t('web.action.params') }}</dt><dd>{% if job.params %}{% for key, value in job.params | dictsort %}<code>{{ key }}={{ value }}</code> {% endfor %}{% else %}{{ t('web.action.none') }}{% endif %}</dd>
+  <dt>{{ t('web.action.created') }}</dt><dd>{{ t('web.action.created_by', at=job.created_at | local, who=t('web.action.by_analysis') if job.requested_by == 'analysis' else t('web.action.by_system') if job.requested_by == 'system' else people.get(job.requested_by, job.requested_by)) }}</dd>
+  <dt>{{ t('web.action.approval') }}</dt><dd>{% if job.approved_by %}{{ t('web.action.approved_at', who=people.get(job.approved_by, job.approved_by), at=job.approved_at | local) }}{% else %}{{ t('web.action.none') }}{% endif %}</dd>
+  <dt>{{ t('web.action.result') }}</dt><dd>{% if shown.summary %}<code>{{ shown.summary }}</code>{% else %}{{ t('web.action.none_yet') }}{% endif %}</dd>
+  {% if job.verify_status %}<dt>{{ t('web.action.after') }}</dt><dd>{{ label('web.verify', job.verify_status) }}{% if shown.verify_detail %}: {{ shown.verify_detail }}{% endif %}</dd>{% endif %}
+  {% if incident %}<dt>{{ t('web.action.incident') }}</dt><dd><a href="/incidents/{{ incident.id }}#action-{{ job.id }}">{{ incident.title }}</a></dd>{% endif %}
+</dl>
+<h2>{{ t('web.action.audit') }}</h2>
+<ul class="events">
+  {% for a in audit %}<li class="event"><span class="ev-time">{{ a.at | clock }}</span><span class="ev-mark"></span>
+    <div class="ev-body"><div class="ev-title">{{ a.event }} <span class="muted">{{ people.get(a.actor, a.actor) }}</span></div>{% if details[a.id] %}<div class="ev-sum">{{ details[a.id] }}</div>{% endif %}</div></li>{% endfor %}
+</ul>
+{% endblock %}

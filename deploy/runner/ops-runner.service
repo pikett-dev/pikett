@@ -1,0 +1,45 @@
+[Unit]
+Description=ops-runner: runs approved runbooks for the ops service
+Wants=network-online.target
+After=network-online.target tailscaled.service
+
+[Service]
+Type=simple
+User=ops-runner
+Group=ops-runner
+EnvironmentFile=/etc/ops-runner/ops-runner.env
+WorkingDirectory=/opt/ops-runner
+Environment=PYTHONDONTWRITEBYTECODE=1
+# The working directory is root-owned and not writable by the runner, so putting it on the module path is safe.
+ExecStart=/usr/bin/python3 -m runner.agent
+Restart=always
+RestartSec=5
+# A job in flight gets a minute to finish its report; the root actions run as their own units (ops-runbook-*.service,
+# started over polkit), so stopping the runner does not cut them off.
+TimeoutStopSec=60
+
+# The runner can change nothing on this server itself: no privileges, a read-only file system except its own state
+# directory, no devices, and network only to Tailscale (the ops service) and localhost (Coolify).
+NoNewPrivileges=true
+CapabilityBoundingSet=
+ProtectSystem=strict
+ReadWritePaths=/var/lib/ops-runner
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=100.64.0.0/10 127.0.0.0/8 ::1
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

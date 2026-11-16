@@ -1,0 +1,6 @@
+# /etc/crowdsec/config.yaml.local, merged over the package's config.yaml.
+# CrowdSec's local API defaults to 127.0.0.1:8080, which Coolify's Traefik already publishes on the test server.
+# 8086 on both servers, so the setup is the same everywhere.
+api:
+  server:
+    listen_uri: 127.0.0.1:8086

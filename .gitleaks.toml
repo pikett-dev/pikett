@@ -1,0 +1,17 @@
+# gitleaks configuration: the default rules, plus the few fixtures that look like secrets on purpose.
+# Never add a real value here. A finding in your change means: remove the value, do not allowlist it.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures and local development defaults"
+regexes = [
+  # the public sample JWT from jwt.io, used to test masking
+  '''eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiIxMjM0NTYifQ\.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c''',
+  # local Postgres of the dev stack
+  '''postgresql\+asyncpg://ops:ops@localhost:5436/ops''',
+]
+paths = [
+  '''uv\.lock''',
+]

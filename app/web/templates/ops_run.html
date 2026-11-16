@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "ops_macros.html" import badge %}
+{% set nav = 'history' %}
+{% block title %}{{ title }} · {{ BRAND }}{% endblock %}
+{% block content %}
+<p style="margin-top:24px"><a href="/ops/history">{{ t('web.run.back') }}</a></p>
+<h1 style="font:600 2rem/1.15 Georgia,serif">{{ title }}</h1>
+<dl class="facts">
+  <dt>{{ t('web.run.status') }}</dt><dd>{{ badge('ok' if run.status == 'ok' else 'failed') }}</dd>
+  <dt>{{ t('web.run.start') }}</dt><dd>{{ run.started_at | local }}</dd>
+  <dt>{{ t('web.run.duration') }}</dt><dd>{{ (run.finished_at - run.started_at) | duration }}</dd>
+  <dt>{{ t('web.run.result') }}</dt><dd>{{ run.summary or t('web.run.no_message') }}</dd>
+  <dt>{{ t('web.run.trigger') }}</dt><dd>{{ t('web.run.trigger_before') }}<code>{{ run.name }}</code>{{ t('web.run.trigger_after', kind=label('web.run.kind', run.kind)) }}</dd>
+  <dt>{{ t('web.run.next') }}</dt><dd>
+    <a href="/ops">{{ t('web.run.overview_link') }}</a>
+    {% if incident %}<br><a href="/incidents/{{ incident.id }}">{{ t('web.run.incident', title=incident.title) }}</a>{% if slack %}<br><a href="{{ slack }}">{{ t('web.event.slack') }}</a>{% endif %}{% endif %}
+  </dd>
+</dl>
+{% endblock %}

@@ -1,0 +1,9 @@
+[Unit]
+Description=Run ops-collect-daily
+
+[Timer]
+OnCalendar=*-*-* 03:40:00 Europe/Vienna
+Persistent=true
+
+[Install]
+WantedBy=timers.target

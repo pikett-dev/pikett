@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "ops_macros.html" import icon, badge, strip, event, help_body %}
+{% set nav = 'ops' %}
+{% block title %}{{ t('web.overview.title') }} · {{ BRAND }}{% endblock %}
+{% block head %}<meta http-equiv="refresh" content="60">{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>{{ icon(hero_state, 34) }}<span>{{ headline }}</span></h1>
+  <p>{{ lead }} {{ t('web.overview.as_of', at=now | local) }}</p>
+</section>
+
+{% if attention %}
+<h2>{{ t('web.overview.needs_you') }}</h2>
+<ul class="attn">
+  {% for a in attention %}
+  <li class="{{ a.state }}">{{ icon(a.state, 20) }}
+    <div><a href="{{ a.href }}">{{ a.title }}</a>{% if a.reason %}<div class="muted">{{ a.reason }}</div>{% endif %}</div></li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<h2>{{ t('web.overview.checks') }}</h2>
+{% for title, items in groups %}
+<h3 class="muted" style="font-size:.92rem;font-weight:600;margin:20px 0 8px">{{ title }}</h3>
+{% for i, c in items %}
+{% set h = HELP.get(c.name) %}
+<article class="card{{ ' has-help' if h }}" id="check-{{ i }}">
+  <div class="check-head"><h3>{{ c.label }}</h3>{{ badge(c.state) }}</div>
+  {% if h %}<details class="help"><summary aria-label="{{ t('web.overview.help_label', label=c.label) }}" title="{{ t('web.overview.help_title') }}"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M7 7.5a3 3 0 1 1 4.2 2.8c-.8.4-1.2 1-1.2 1.9v.3M10 15.5v.1"/></svg></summary>
+    <div class="help-body">{{ help_body(h) }}</div></details>{% endif %}
+  {% if c.headline %}<p class="headline">{{ c.headline }}</p>{% endif %}
+  {% if c.rest %}<details><summary>{{ t('web.overview.more_lines', n=c.rest | length) }}</summary><ul>{% for line in c.rest %}<li>{{ line }}</li>{% endfor %}</ul></details>{% endif %}
+  <div class="check-foot">
+    {{ strip(c.strip, c.label) }}
+    <span>{% if c.last_run %}{{ t('web.overview.last_run', ago=c.last_run | ago, at=c.last_run | local) }}{% else %}{{ t('web.overview.no_run') }}{% endif %}</span>
+    <span>{{ c.cadence }}</span>
+  </div>
+</article>
+{% endfor %}
+{% else %}
+<p class="muted">{{ t('web.overview.no_checks') }}</p>
+{% endfor %}
+
+<h2>{{ t('web.overview.ai') }}</h2>
+<div class="card">
+  {% if not agent_on %}<span class="muted">{{ t('web.overview.ai_off') }}</span>
+  {% elif budget is none %}<span class="muted">{{ t('web.overview.budget_unreadable') }}</span>
+  {% else %}{{ t('web.budget.line', spent='%.2f' | format(budget.spent_usd), budget='%.2f' | format(budget.budget_usd)) }}{% if budget.exhausted %}, <span class="problem">{{ t('web.budget.exhausted') }}</span>{% elif budget.spent_usd >= budget.budget_usd %}, <span class="warn">{{ t('web.budget.cheaper') }}</span>{% endif %}.{% endif %}
+</div>
+
+<h2>{{ t('web.overview.false_alarms') }}</h2>
+{% if review is none %}<p class="muted">{{ t('web.overview.review_unreadable') }}</p>
+{% elif review %}<div class="card"><p class="muted">{{ t('web.overview.review_intro') }}</p>
+  <ul>{% for name, count, advice in review %}<li><strong>{{ name }}</strong> ({{ count }}x): {{ advice }}</li>{% endfor %}</ul></div>
+{% else %}<p class="muted">{{ t('web.overview.review_none') }}</p>{% endif %}
+
+<h2>{{ t('web.overview.recent') }}</h2>
+{% if recent %}<ul class="events">{% for e in recent %}{{ event(e) }}{% endfor %}</ul>
+<p><a href="/ops/history">{{ t('web.overview.all_history') }}</a></p>
+{% else %}<p class="muted">{{ t('web.entries_none') }}</p>{% endif %}
+{% endblock %}
