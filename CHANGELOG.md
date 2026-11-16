@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+## 0.2.0 - 2026-11-16
+
 Launch hardening. Upgrade notes first:
 
 - **Before the next deploy, in this order:** (1) create `deploy/ops-server/alert-token` on the ops server, (2) if you deploy with the pipeline, run `provision.sh pipeline` again (with `OPS_REPO_URL`, see below) so the server's copy of `ops-deploy.sh` is the new one, (3) deploy. The compose file mounts the token file into vmalert, and `docker compose up` stops with a missing-file error without it; only the new `ops-deploy.sh` checks for it before it builds. Generate a token with `openssl rand -hex 32`, set it as `ALERT_TOKEN` in `.env` and write the same value to `alert-token` (mode 600, git-ignored, as are all `*-token` and `*.token` files). `provision.sh deploy` writes the file from `.env` for you. `ops-deploy.sh` refuses to deploy when the file is missing or differs from `.env` (after a rotation, update both). An empty `ALERT_TOKEN` and an empty file keep the old behaviour (open webhook) and the service logs a warning at startup.
