@@ -16,7 +16,7 @@ Launch hardening. Upgrade notes first:
 - **`provision.sh pipeline` needs `OPS_REPO_URL`** (an SSH URL such as `git@github.com:pikett-dev/pikett.git`); the old default pointed to a placeholder Bitbucket repository. The host key and SSH config entry on the server now use the host of that URL instead of `bitbucket.org`, and the known-hosts file is `/root/.ssh/known_hosts_repo`. Run `provision.sh pipeline` again to refresh the server.
 - Settings missing from the examples are in `ops-service.env.example` now: `SSH_KNOWN_USERS` (list every user your CI or deploy pipeline logs in with, or each deploy raises an SSH alert), `SSH_ANY_TIME_USERS`, `LOG_LEVEL`.
 - Docs: README sections "Data that leaves your servers" and "Operating Pikett", the terms table in "How it works", `docs/operating.md` (upgrade, backup and restore of `ops-db`, uninstall), an "Undo" section for Alloy, and the tailnet policy step in the install guide.
-
+- **SSH review knows keys by fingerprint.** New setting `SSH_KNOWN_KEYS` (JSON: label, fingerprint, user, networks, optional hosts). A login that matches a known key is usual at any time; any other unusual login goes out as one grouped message per report and server (by source, user and key); an unknown key, or a known key from the wrong user or network, is posted per group (at most 5 per report, the rest in one more message). Without keys the review judges by network, user and time as before. Upgrade note: the posted-login key now includes the fingerprint, so logins of the last 3 days may be posted once more after the update.
 - README: alert flow diagram (`docs/assets/pikett-flow*.svg`) and a Mermaid architecture diagram instead of the ASCII sketch.
 
 Upgrade notes first, then the rest.

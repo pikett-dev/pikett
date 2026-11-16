@@ -65,6 +65,7 @@ def build_security(
         settings.security_hosts,
         known_users=settings.ssh_known_users,
         any_time_users=settings.ssh_any_time_users,
+        known_keys=settings.ssh_known_keys,
         locale=locale,
     )
     checks: list[Check] = [patches, reboots, backup, findings, trivy, osv, intel, images, lynis, crowdsec, ssh]

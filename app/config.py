@@ -1,3 +1,4 @@
+import ipaddress
 import re
 from functools import cached_property, lru_cache
 from typing import Literal
@@ -16,6 +17,17 @@ class Person(BaseModel):
     name: str
     slack_user_id: str
     ntfy_topic: str
+
+
+class KnownSshKey(BaseModel):
+    """An SSH key that is expected on a server: who uses it, as which user and from which networks (CIDR)."""
+
+    label: str
+    fingerprint: str = Field(pattern=r"^SHA256:\S+$")  # as ssh-keygen -lf prints it
+    user: str
+    hosts: list[str] = []  # servers the key is expected on (HOST_NAME there); empty: all
+    # Parsed once at startup, so a typo fails the start and not a login review.
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = Field(min_length=1)
 
 
 class Settings(BaseSettings):
@@ -90,6 +102,11 @@ class Settings(BaseSettings):
     # SSH login review: users that are expected at all, and those that may log in at night (the pipeline).
     ssh_known_users: list[str] = ["root", "deploy"]
     ssh_any_time_users: list[str] = ["deploy"]
+    # Known keys by fingerprint (JSON in SSH_KNOWN_KEYS). Once any key applies to a server, a login with another key,
+    # or with a listed key as another user or from another network, is reported on its own; a login that matches is
+    # usual at any time. Keep the networks narrow: a stolen key used from them stays silent. Empty: the review judges
+    # by network, user and time only.
+    ssh_known_keys: list[KnownSshKey] = []
     # Coolify database UUIDs whose backups are checked through the Coolify API (COOLIFY_URL, COOLIFY_TOKEN).
     # Empty: the backup check is off and the digest says so.
     backup_databases: list[str] = []
@@ -137,6 +154,14 @@ class Settings(BaseSettings):
         """Compose passes `ALERT_TOKEN=` as an empty string when .env leaves it blank."""
         return None if isinstance(value, str) and not value.strip() else value
 
+    @field_validator("ssh_known_keys")
+    @classmethod
+    def _fingerprints_are_unique(cls, keys: list[KnownSshKey]) -> list[KnownSshKey]:
+        fingerprints = [key.fingerprint for key in keys]
+        if len(set(fingerprints)) != len(fingerprints):
+            raise ValueError("ssh_known_keys: every fingerprint may be listed once (leave hosts empty for all servers)")
+        return keys
+
     @field_validator("timezone")
     @classmethod
     def _timezone_exists(cls, value: str) -> str:
@@ -152,6 +177,11 @@ class Settings(BaseSettings):
             if getattr(self, name) not in PRICED_MODELS:
                 raise ValueError(
                     f"{name} must be one of {sorted(PRICED_MODELS)}: add a price in app/agent/pricing.py first"
+                )
+        for key in self.ssh_known_keys:
+            if unknown := set(key.hosts) - set(self.security_hosts):
+                raise ValueError(
+                    f"ssh_known_keys: {key.label} names {sorted(unknown)}, which are not in security_hosts"
                 )
         tokens = [t.get_secret_value() for t in self.runner_tokens.values()]
         if len(set(tokens)) != len(tokens):

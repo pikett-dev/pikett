@@ -220,6 +220,7 @@ All settings are environment variables, read by `app/config.py` (pydantic-settin
 | `NTFY_URL`, `NTFY_TOKEN` | Pager |
 | `HEALTHCHECKS_PING_URL` | Dead man's switch for the ops server itself |
 | `ALERT_TOKEN` | Bearer token of the alert webhook `POST /api/v2/alerts`, at least 32 characters (`openssl rand -hex 32`). Set it in `.env` (compose passes it to the service) and write the same value to `deploy/ops-server/alert-token`, which vmalert reads. Unset: the webhook accepts every caller in the tailnet and the service logs a warning at startup |
+| `SSH_KNOWN_KEYS` | Optional JSON list of expected SSH keys (label, fingerprint, user, networks, optional hosts). A login that matches is usual at any time; keep the networks narrow. Details in `deploy/host-agent/README.md` |
 | `SSH_KNOWN_USERS`, `SSH_ANY_TIME_USERS` | Users expected to log in over SSH, and those that may log in at night. List every user your CI or deploy pipeline uses, or each deploy raises an SSH alert |
 | `ANTHROPIC_API_KEY` | Turns the analyst on; without it there is no analysis and no analysis button |
 | `AGENT_MODEL`, `AGENT_DEEP_MODEL`, `AGENT_FALLBACK_MODEL`, `AGENT_DAILY_BUDGET_USD` | Model stages and daily budget |

@@ -82,4 +82,14 @@ CrowdSec runs on every server and bans automatically through the iptables bounce
 
 **Undo:** `apt-get remove crowdsec-firewall-bouncer-iptables crowdsec` removes the bouncer and its rules. Then remove `ssh crowdsec` from `DAILY_KINDS`. Locked out: log in through your provider's console and run `cscli decisions delete --ip <ip>`.
 
-**Expected result:** the weekly report lists detections, the number of addresses, bans and the most frequent scenarios per server. A login from outside Tailscale, by an unknown user (`SSH_KNOWN_USERS`, default `root` and `deploy`) or between 23:00 and 07:00 (except users in `SSH_ANY_TIME_USERS`) is reported once in the ops channel. If CrowdSec does not answer, a P2 `CrowdSecDown` opens.
+**Expected result:** the weekly report lists detections, the number of addresses, bans and the most frequent scenarios per server. Unusual SSH logins arrive once per report and server as one message in the ops channel, grouped by source, user and key with count and period. If no key in `SSH_KNOWN_KEYS` (see below) applies to a server, a login is unusual when it comes from outside Tailscale, by an unknown user (`SSH_KNOWN_USERS`, default `root` and `deploy`) or between 23:00 and 07:00 (except users in `SSH_ANY_TIME_USERS`). If at least one key applies, every login that does not match a known key (fingerprint, user and network) is unusual: an unknown key, a login without a key, or a known key with the wrong user or from the wrong network. Those get a message of their own per source and key (at most 5 per report, the rest in one more). An entry applies to all servers unless `hosts` names them (`["app-1"]`); a fingerprint may be listed once. If CrowdSec does not answer, a P2 `CrowdSecDown` opens.
+
+`SSH_KNOWN_KEYS` is JSON with a label, the fingerprint (`ssh-keygen -lf ~/.ssh/authorized_keys`), the user and the allowed networks. Example:
+
+```
+SSH_KNOWN_KEYS=[{"label":"backup","fingerprint":"SHA256:<fingerprint>","user":"root","networks":["10.0.1.0/24"]},{"label":"admin","fingerprint":"SHA256:<fingerprint>","user":"root","networks":["100.64.0.0/10"]},{"label":"pipeline","fingerprint":"SHA256:<fingerprint>","user":"deploy","networks":["198.51.100.10/32"]}]
+```
+
+A known key is never reported from its networks at any time, so keep the networks as narrow as possible: a stolen key used from those networks stays silent.
+
+The collector needs no change: the journal line `Accepted publickey ... ssh2: ED25519 SHA256:...` already carries the fingerprint.
