@@ -4,7 +4,13 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
-- **Own runbook catalog without editing the repository.** New setting `CATALOG_FILE` (default `/etc/pikett/catalog.json`); compose mounts the git-ignored folder `deploy/ops-server/catalog/` there, and the service uses `catalog.json` from it instead of `runner/catalog.json` when it exists. Nothing changes without the file. `deploy/runner/install.sh` takes the same file through `CATALOG_FILE` (kept in `/etc/ops-runner/catalog.json`); every runner needs a catalog with the same security fields (see the README section "Runbook catalog").
+## 0.3.0 - 2026-11-16
+
+Your own runbook catalog is configuration now. Nothing is required on upgrade; installations that keep the shipped catalog behave as before.
+
+- **Upgrade notes.** `docker compose up` creates the empty folder `deploy/ops-server/catalog/` next to `compose.yml` (it is git-ignored). To use your own server names, texts or risk levels, put your edited copy of `runner/catalog.json` there as `catalog.json` and restart the service. Install the same file on every runner with `ssh root@<server> CATALOG_FILE=<path on the server> .../deploy/runner/install.sh`; it is checked first and kept in `/etc/ops-runner/catalog.json`, so later runs of the script leave it in place. Update the runner code on a server (rsync and `install.sh`, as in `deploy/runner/README.md`) before you rely on this there: the runner reads `/etc/ops-runner/catalog.json` only from this version on.
+- **New setting `CATALOG_FILE`** (default `/etc/pikett/catalog.json`, the path compose mounts the folder to). The service uses the file when it exists and otherwise `runner/catalog.json`. A file that cannot be read or parsed stops the start with a message that names the path; so does a `CATALOG_FILE` you set yourself that points to a missing file; a folder with other files but no `catalog.json` is logged as a warning. The runner follows the same rule through the `CATALOG_FILE` of its environment (default `/etc/ops-runner/catalog.json`), implemented once in `runner.catalog.load_installed_catalog`.
+- Every runner needs a catalog with the same security fields as the service, because the digest signed into each job covers `risk`, `hosts`, `verify` and the parameter rules. Texts and `proposable` are not part of it; keep `proposable` equal by hand. README section "Runbook catalog".
 
 ## 0.2.0 - 2026-11-16
 
