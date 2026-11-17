@@ -199,7 +199,7 @@ The steps below are the path we use. Each folder under `deploy/` has a README wi
 2. **Configuration.** Copy `deploy/ops-server/.env.example` to `.env` and `deploy/ops-server/ops-service.env.example` to `ops-service.env` on the server and fill them in. Both files stay on the server and are git-ignored; `docs/operating.md`, "Configuration files", lists all five configuration files (also the ones of the runner and the collector), where they live and how they get there. Generate `ALERT_TOKEN` (`openssl rand -hex 32`) and write the same value to the file `alert-token` next to `.env` (mode 600, also git-ignored): the service checks it, vmalert sends it. Then apply the tailnet policy from `deploy/tailscale-acl.example.hujson` (see [Security model](#security-model)).
 3. **Slack.** Create the app from `deploy/slack-app-manifest.json` (upload `docs/assets/pikett-icon-512.png` under Basic Information > Display Information), enable Socket Mode, invite the bot to an alerts channel and an ops channel, and set `SLACK_*`.
 4. **App servers.** Install Alloy (`deploy/app-host/`), the host collector (`deploy/host-agent/`) and, if you want actions, the runner (`deploy/runner/`). Point your applications' OTLP exporter at Alloy.
-5. **Alert rules.** Adjust `deploy/vmalert/rules/*.yml` to your services (error rate, slow routes, disk, memory, missing containers, watchdog).
+5. **Alert rules.** The shipped rules cover error rate, slow routes, disk, memory, missing containers, Postgres and the watchdog (`deploy/vmalert/rules/*.yml`). Do not edit them: add your own files to `deploy/vmalert/rules.local/` (same name replaces a shipped file, `groups: []` switches it off) and send them with the deploy, see `docs/operating.md`, "Your own rules and scrape targets".
 6. **Deploys.** `deploy/ops-server/ops-deploy.sh <release tag or commit>` checks out that commit of `main` on the ops server, builds the image there (no registry needed), restarts the service and rolls back if `/health` stays red. Call it from your CI over Tailscale (examples in `deploy/ci/`, see `docs/operating.md`, "Deploy from CI"), or by hand.
 
 ## Configuration
@@ -235,8 +235,10 @@ Every integration is optional. Without its settings a feature is switched off, n
 
 | What | Where |
 |---|---|
-| Alert rules | `deploy/vmalert/rules/` |
-| What Alloy collects, sampling, labels | `deploy/app-host/alloy/config.alloy` |
+| Own alert rules, or switch off a shipped file | `deploy/vmalert/rules.local/` (git-ignored); a file with the name of a shipped one replaces it. Sent with `tar -C rules -cf - . \| ssh deploy@<ops-server> "v1.2.3 rules"`; see `docs/operating.md` |
+| Scraping your apps' `/metrics`, Postgres monitoring | your own `local-*.alloy` files, copied with `ALLOY_LOCAL_DIR=<folder> deploy/app-host/agent.sh deploy`; secrets in `/opt/ops-agent/secrets.env` on the app server. Examples in `deploy/app-host/alloy/examples/` |
+| Shipped alert rules | `deploy/vmalert/rules/` (changes come with a release) |
+| What Alloy collects, sampling, labels | `deploy/app-host/alloy/config.alloy` (shipped; extra collection goes into your own `local-*.alloy` next to it) |
 | Runbooks, their risk and the servers they may run on | `runner/catalog.json` (allows every runbook on any server); only to restrict servers or change texts, your own `deploy/ops-server/catalog/catalog.json` (see below) |
 | What the analyst knows about your stack | `PROJECT_NAME`, `AGENT_STACK_DESCRIPTION` |
 | New read-only tools for the analyst | `app/agent/tools/` behind the ports in `app/agent/ports.py` |

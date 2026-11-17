@@ -1,0 +1,57 @@
+// Example: scrape the Prometheus /metrics endpoint of an app that sits behind a Bearer token.
+//
+// Copy this file into your own configuration repository as local-<something>.alloy (agent.sh with ALLOY_LOCAL_DIR
+// copies only files with that name) and change the three values marked CHANGE. The component names must be unique
+// across all .alloy files, so keep the local_ prefix. This file is not loaded from the examples/ folder.
+//
+// The token is read from the environment (APP_ACME_API_METRICS_TOKEN in /opt/ops-agent/secrets.env on the app server,
+// mode 600), never from this file.
+
+discovery.docker "local_apps" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// Coolify replaces an app's container on every deploy and gives the new one a new name and IP address. The label
+// coolify.resourceName stays, so the target is found again by it. The address is the container's IP in the Docker
+// network "coolify" and the port the app listens on.
+discovery.relabel "local_acme_api" {
+  targets = discovery.docker.local_apps.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_coolify_resourceName"]
+    regex         = "acme-api"  // CHANGE: the name of the Coolify resource
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_docker_network_name"]
+    regex         = "coolify"
+    action        = "keep"
+  }
+  // The address is built from the IP in that network, so it does not depend on the image exposing a port.
+  rule {
+    source_labels = ["__meta_docker_network_ip"]
+    regex         = "(.+)"
+    replacement   = "$1:8000"  // CHANGE: the port of the app
+    target_label  = "__address__"
+  }
+  // The same label as on the container metrics and logs of config.alloy, so rules can group by service and host.
+  rule {
+    source_labels = ["__meta_docker_container_label_coolify_resourceName"]
+    target_label  = "service"
+  }
+}
+
+prometheus.scrape "local_acme_api" {
+  targets         = discovery.relabel.local_acme_api.output
+  job_name        = "acme-api"  // CHANGE: the job label of these metrics
+  metrics_path    = "/metrics"
+  scrape_interval = "30s"
+
+  authorization {
+    type        = "Bearer"
+    credentials = sys.env("APP_ACME_API_METRICS_TOKEN")
+  }
+
+  // config.alloy defines this component; its external_labels add host=<HOST_NAME> to everything.
+  forward_to = [prometheus.remote_write.ops.receiver]
+}

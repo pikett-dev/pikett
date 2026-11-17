@@ -14,7 +14,14 @@ services:
       - --server.http.listen-addr=127.0.0.1:12345
       # otelcol.storage.file (persistent queue) is public-preview in this release.
       - --stability.level=public-preview
-      - /etc/alloy/config.alloy
+      # A directory: Alloy loads every *.alloy file in it as one configuration (config.alloy plus the local-*.alloy files
+      # of your installation, see README.md). Subdirectories such as examples/ are not read.
+      - /etc/alloy
+    # Secrets for your own local-*.alloy files (Bearer tokens, database passwords), read there with sys.env. Created by
+    # hand on the server, mode 600; agent.sh never writes or deletes it. Optional.
+    env_file:
+      - path: ./secrets.env
+        required: false
     environment:
       OPS_SERVER: ${OPS_SERVER:?set OPS_SERVER to the Tailscale IP of the ops server}
       HOST_NAME: ${HOST_NAME:-app-1}
@@ -27,7 +34,7 @@ services:
     networks:
       - coolify
     volumes:
-      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ./alloy:/etc/alloy:ro
       - alloy-data:/var/lib/alloy/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /:/host/rootfs:ro,rslave

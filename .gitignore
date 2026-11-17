@@ -29,6 +29,11 @@ job-signing.key
 # The installation's own runbook catalog (see README, "Runbook catalog").
 deploy/ops-server/catalog/
 
+# The installation's own alert rules and the rules vmalert loads (shipped + own), see docs/operating.md.
+deploy/vmalert/rules.local/
+deploy/vmalert/rules.live/
+deploy/vmalert.stage.*/
+
 # Token files (for example deploy/ops-server/alert-token, read by vmalert). Never commit them.
 *-token
 *.token

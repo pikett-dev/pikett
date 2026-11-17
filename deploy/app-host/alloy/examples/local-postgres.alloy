@@ -1,0 +1,46 @@
+// Example: Postgres metrics for one database, for the rules in deploy/vmalert/rules/postgres.yml.
+//
+// Copy this file into your own configuration repository as local-<something>.alloy (agent.sh with ALLOY_LOCAL_DIR
+// copies only files with that name). One component pair per database server: the exporter reports every database of
+// the server it connects to (stat_database), so a second component for another database on the same server would
+// report the same numbers twice. For another server add another pair; several data sources in one component would
+// be reported under the component's name, and `enabled_collectors` would apply to the first one only. Component
+// names must be unique across all .alloy files, so keep the local_ prefix.
+//
+// The connection string comes from the environment (PG_ACME_DSN in /opt/ops-agent/secrets.env on the app server,
+// mode 600), for example
+//   PG_ACME_DSN=postgresql://pikett_monitor:<password>@<database-container>:5432/<database>?sslmode=disable
+// The host is the name of the database container in the Docker network "coolify" (Alloy is in that network).
+// sslmode=disable is fine only inside that network. A password with special characters has to be URL-encoded.
+// The role needs pg_monitor and nothing else, see "Postgres monitoring" in docs/operating.md.
+
+prometheus.exporter.postgres "local_acme_db" {
+  data_source_names = [sys.env("PG_ACME_DSN")]
+
+  // The default collectors of the component plus long_running_transactions (rule PostgresLongTransaction). Setting
+  // enabled_collectors replaces the default list, so the defaults are repeated here.
+  enabled_collectors = [
+    "database", "locks", "replication", "replication_slot", "roles", "stat_bgwriter", "stat_database",
+    "stat_progress_vacuum", "stat_user_tables", "statio_user_tables", "wal", "long_running_transactions",
+  ]
+}
+
+// The exporter's targets come with their own job label (integrations/postgres), which job_name would not replace.
+// The rules look for job="postgres".
+discovery.relabel "local_acme_db" {
+  targets = prometheus.exporter.postgres.local_acme_db.targets
+
+  rule {
+    target_label = "job"
+    replacement  = "postgres"
+  }
+}
+
+prometheus.scrape "local_acme_db" {
+  targets         = discovery.relabel.local_acme_db.output
+  job_name        = "postgres"
+  scrape_interval = "30s"
+
+  // config.alloy defines this component; its external_labels add host=<HOST_NAME> to everything.
+  forward_to = [prometheus.remote_write.ops.receiver]
+}

@@ -152,6 +152,8 @@ Without Coolify, change the Docker network in `deploy/app-host/compose.yml` to t
 
 Ask the human to set `OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4318` and `DEPLOYMENT_ENVIRONMENT` on each application and redeploy it. That is a change to their production applications: it needs their "yes" and they may want to do it themselves.
 
+If the human has their own `/metrics` endpoints or Postgres databases to watch, follow `docs/operating.md`, "Your own rules and scrape targets": `local-*.alloy` files from `deploy/app-host/alloy/examples/`, passed with `ALLOY_LOCAL_DIR=<folder>`. The secrets for them (a Bearer token, a database DSN) the human writes into `/opt/ops-agent/secrets.env` on the app server (mode 600); never read, print or commit them. The Postgres role needs `pg_monitor` and nothing else, and creating it in their database needs their "yes".
+
 Tag the app server with `tag:pikett-app` in the Tailscale admin console first (the human does it), or the tailnet policy blocks Alloy.
 
 **Check:** `deploy/app-host/agent.sh status` shows host metrics, containers and log lines from the app server (it asks the ops server from the app server, because only app servers may reach the telemetry ports), and the `AppServerSilent` incident (if one opened) closes.
@@ -172,7 +174,7 @@ Only if the human wants actions. Follow `deploy/runner/README.md`. The shipped `
 
 ## Phase 7: alert rules and handover
 
-1. Walk through `deploy/vmalert/rules/*.yml` with the human and adjust thresholds and service names to their applications. Restart vmalert after changes.
+1. Walk through `deploy/vmalert/rules/*.yml` with the human. Do not edit the shipped files: put changed or added rules into `deploy/vmalert/rules.local/` (a file with the name of a shipped one replaces it, `groups: []` switches it off), see `docs/operating.md`, "Your own rules and scrape targets". `ops-deploy` checks them with `vmalert -dryRun` and loads them; vmalert picks up a change within 30 seconds.
 2. Set `HEALTHCHECKS_PING_URL` so a dead ops server is noticed from outside.
 3. Write a short handover note for the human: servers and what runs where, which phases are done, which optional parts are off, where the env files are, and how to undo each phase. Do not include any secret in it.
 

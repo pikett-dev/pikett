@@ -29,7 +29,12 @@ pipelines:
             - mkdir -p ~/.ssh
             - echo "$OPS_SERVER_HOST $(echo "$OPS_SERVER_HOST_KEY" | cut -d' ' -f2,3)" >> ~/.ssh/known_hosts
             # What goes over SSH is the release tag; the server resolves it and refuses anything that is not on main.
-            - ssh -o StrictHostKeyChecking=yes -o ProxyCommand="tailscale --socket=/tmp/tailscaled.sock nc %h %p" "deploy@$OPS_SERVER_HOST" "$(tr -d '[:space:]' < PIKETT_VERSION)"
+            # A folder rules/ in this repository holds your own alert rules (*.yml); with the word "rules" the server
+            # replaces its own rules with that folder, after vmalert has checked them (docs/operating.md).
+            - |
+              command="$(tr -d '[:space:]' < PIKETT_VERSION)"
+              [ ! -d rules ] || command="$command rules"
+              { [ ! -d rules ] || tar -C rules -cf - .; } | ssh -o StrictHostKeyChecking=yes -o ProxyCommand="tailscale --socket=/tmp/tailscaled.sock nc %h %p" "deploy@$OPS_SERVER_HOST" "$command"
           after-script:
             # Remove the node right away instead of waiting for the ephemeral timeout.
             - tailscale --socket=/tmp/tailscaled.sock logout || true

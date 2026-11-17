@@ -31,7 +31,7 @@ services:
       - --storage.path=/var/lib/alloy/data
       - --server.http.listen-addr=0.0.0.0:12345
       - --stability.level=public-preview
-      - /etc/alloy/config.alloy
+      - /etc/alloy
     cgroup: host  # see deploy/app-host/compose.yml
     environment:
       OPS_SERVER: host.docker.internal
@@ -40,7 +40,7 @@ services:
       - "127.0.0.1:4318:4318"
       - "127.0.0.1:12345:12345"
     volumes:
-      - ../app-host/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ../app-host/alloy:/etc/alloy:ro
       - alloy-data:/var/lib/alloy/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /:/host/rootfs:ro

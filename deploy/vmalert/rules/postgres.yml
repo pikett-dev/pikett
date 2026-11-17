@@ -1,0 +1,54 @@
+# Postgres rules. Metrics come from prometheus.exporter.postgres in Alloy (deploy/app-host/alloy/examples/local-postgres.alloy)
+# with job="postgres", one instance per database and the label host=<name>. Without that example in use there are no
+# pg_* series and none of these rules can fire.
+groups:
+  - name: postgres
+    interval: 30s
+    rules:
+      - alert: PostgresDown
+        # pg_up is 0 when the exporter cannot log in or connect; the exporter itself still answers its scrape.
+        expr: pg_up == 0
+        for: 2m
+        labels:
+          severity: P1
+        annotations:
+          summary: "Postgres {{ $labels.instance }} on {{ $labels.host }} is not reachable (pg_up is 0)"
+
+      - alert: PostgresConnectionsHigh
+        # Backends of all databases of one server against max_connections. pg_stat_database_numbackends comes from the
+        # stat_database collector, pg_settings_max_connections from the exporter's settings metrics (both on by default).
+        expr: |
+          sum by (host, instance) (pg_stat_database_numbackends)
+            / max by (host, instance) (pg_settings_max_connections) > 0.8
+        for: 10m
+        labels:
+          severity: P2
+        annotations:
+          summary: "Postgres {{ $labels.instance }} on {{ $labels.host }} uses more than 80% of max_connections"
+
+      - alert: PostgresDeadlocks
+        expr: increase(pg_stat_database_deadlocks[10m]) > 0
+        labels:
+          severity: P3
+        annotations:
+          summary: "Postgres database {{ $labels.datname }} on {{ $labels.host }} had deadlocks in the last 10 minutes"
+
+      - alert: PostgresLongTransaction
+        # Needs the long_running_transactions collector (enabled in the example): the age in seconds of the oldest
+        # transaction that is not idle. The series is absent while no transaction is open.
+        expr: pg_long_running_transactions_oldest_timestamp_seconds > 600
+        for: 1m
+        labels:
+          severity: P2
+        annotations:
+          summary: "A transaction on Postgres {{ $labels.instance }} ({{ $labels.host }}) has been open for more than 10 minutes"
+
+      - alert: PostgresExporterFailing
+        # The scrape of the exporter itself failed (so pg_up above cannot say anything either), or one of its
+        # collectors reports an error while pg_up is still 1. Needs the job="postgres" label of the example.
+        expr: up{job="postgres"} == 0 or pg_exporter_last_scrape_error == 1
+        for: 10m
+        labels:
+          severity: P2
+        annotations:
+          summary: "The Postgres exporter {{ $labels.instance }} on {{ $labels.host }} cannot be scraped"

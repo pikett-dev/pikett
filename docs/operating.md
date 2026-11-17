@@ -20,6 +20,7 @@ What to know:
 - **`provision.sh deploy` overwrites** `.env`, `ops-service.env` and `alert-token` on the server with the ones from your machine. A deploy by tag does not.
 - **`ops-deploy` refuses to deploy** when `TAILSCALE_IP` is missing in `.env`, when `alert-token` is missing or differs from `ALERT_TOKEN`, or when `ALERT_TOKEN` is not a plain value (no quotes, spaces or comment).
 - **Restart the service after a change** to `ops-service.env` or `.env`. A change to the tokens of a runner or collector needs a restart of that unit.
+- **Own rules and Alloy files** are not among the five: `deploy/vmalert/rules.local/` on the ops server and `/opt/ops-agent/alloy/local-*.alloy` and `/opt/ops-agent/secrets.env` on an app server. They come from your configuration repository, except `secrets.env`, which is written by hand (see "Your own rules and scrape targets").
 - **Back them up** with the database dump (next sections): they are the only part of the installation that is not in Git or in the database, and `ops-service.env` holds the runner signing key.
 - **Upgrade:** the CHANGELOG names a new variable or file; add it before you deploy (step 3 below).
 
@@ -27,7 +28,7 @@ What to know:
 
 1. **Read the [CHANGELOG](../CHANGELOG.md)** for every version between yours and the new one. The upgrade notes come first in each entry. `/health` on the ops service shows the running version (the commit of the image).
 2. **Take a backup** (next section). Migrations only go forward: going back to an older version means restoring the dump from before the upgrade.
-3. **Check what the notes ask for before you deploy.** Typical items: a new variable in `.env` or `ops-service.env` (see "Configuration files" above), a file that must exist on the server (`alert-token`), a re-run of `provision.sh pipeline` after a change to `ops-deploy.sh` (the server holds a copy of it).
+3. **Check what the notes ask for before you deploy.** Typical items: a new variable in `.env` or `ops-service.env` (see "Configuration files" above), a file that must exist on the server (`alert-token`), a re-run of `provision.sh pipeline` after a change to `ops-deploy.sh` (the server holds a copy of it), `agent.sh deploy` after a change to `deploy/app-host/`.
 4. **Deploy the ops server.** `ops-deploy.sh` takes a release tag such as `v1.2.3` or the full 40-character commit hash, and only deploys a commit that is on `main`. The server resolves a tag itself, so nobody has to look up the hash.
    - From your CI or your machine, with the pipeline key (a CI runner on the tailnet needs the optional `tag:pikett-ci` rule of the tailnet policy): `ssh -i <pipeline-key> deploy@<ops-server> v1.2.3`. A pipeline that does this on every push is in the next section.
    - By hand as root on the server: `SSH_ORIGINAL_COMMAND=v1.2.3 /usr/local/bin/ops-deploy`.
@@ -58,6 +59,51 @@ Most installations keep their configuration in a repository of their own (the fi
 The pipeline key can run `ops-deploy` and nothing else (`provision.sh pipeline` writes it as `restrict,command=...` for the `deploy` user, with `OPS_DEPLOY_PUBKEY` as its public key), and `ops-deploy` accepts only a release tag or a full hash that is on `main` of the repository the server fetches from (`OPS_REPO_URL`). `OPS_REPO_URL` is the URL the server fetches Pikett from. An `https://` URL of a public repository (for example `https://github.com/pikett-dev/pikett.git`) needs no key. A private repository needs an SSH URL; `provision.sh pipeline` then creates a read-only key on the server and prints it for you to add as a deploy key at your Git host. A URL with credentials (`https://user:token@...`) is refused, because the server would keep the token in its remote URL. If a server switches from an SSH to an HTTPS URL, remove the old deploy key at your Git host, and on the server delete `/root/.ssh/ops-repo` (and `.pub`), `/root/.ssh/known_hosts_repo` and the matching `Host` entry in `/root/.ssh/config`.
 
 The pipeline holds no secret of Pikett: `.env`, `ops-service.env` and `alert-token` stay on the server. Every push to `main` runs the deploy. Pushing the same version again is harmless (the image is the same and compose recreates nothing), but it queues behind other deploys and takes a minute. The pins in the examples (actions by commit, the Tailscale image by digest) are yours to bump.
+
+## Your own rules and scrape targets
+
+Everything an installation adds lives in its own configuration repository, not in tracked Pikett files. A deploy never overwrites or deletes it, except that `rules.local/` is replaced when you send rules (below).
+
+### Alert rules
+
+vmalert loads the rules from `deploy/vmalert/rules.live/`. `ops-deploy` builds that folder on every deploy: the shipped files of the release, and over them the files of your own folder `deploy/vmalert/rules.local/` (git-ignored). Both are plain rule files (`*.yml`, `groups:` at the top).
+
+- **Add rules:** put a file with a new name into `rules.local/`.
+- **Change or switch off a shipped file:** put a file with the same name there. `rules.local/apps.yml` replaces `apps.yml` as a whole; with the content `groups: []` it switches that file off. New shipped files of later releases are loaded as before.
+- **Check:** `vmalert -dryRun` runs on the shipped rules of the release you deploy together with yours, before the checkout. If it refuses them, `ops-deploy` exits with 1 and changes nothing: no checkout, no build, no restart, and `rules.local/` stays as it was.
+
+To get the files from your configuration repository onto the server, send the folder as a tar on stdin and add the word `rules` to the command:
+
+```
+tar -C rules -cf - . | ssh deploy@<ops-server> "v1.2.3 rules"
+```
+
+`ssh deploy@<ops-server> v1.2.3` without the word deploys the release and leaves `rules.local/` alone. With it, the tar replaces the folder: a file that is no longer in the tar is removed. To remove all own rules, send a tar that holds only `./`; an empty stream is refused, so a failed `tar` on the client cannot wipe the rules. The server accepts at most 1 MiB and 100 entries, an uncompressed tar, and only plain `*.yml` files at the top level (no folders, links or other names) of at most 1 MiB each, and refuses the whole tar otherwise. The pipeline key still runs only `ops-deploy`; the only thing it can change besides the release is `rules.local/`, and a rule file cannot run anything on the server. It can, however, silence alerts: a file named like a shipped one with `groups: []` switches that file off, and unlike code, rules are not tied to `main`. Whoever holds the pipeline key can therefore switch off alerts (a missing Watchdog still raises a P1). If a later step of a deploy fails (image build, health check), the new rules stay in place while the image rolls back; only a refusal by `vmalert -dryRun` changes nothing at all. The examples in `deploy/ci/` send `rules/` when that folder exists in your repository. A tar made on macOS needs `COPYFILE_DISABLE=1` in front of `tar`, or it adds `._*` entries that the server refuses.
+
+By hand on the server: put the files into `/opt/ops/deploy/vmalert/rules.local/` and run `SSH_ORIGINAL_COMMAND=v1.2.3 /usr/local/bin/ops-deploy` (the check runs, vmalert picks the change up within 30 seconds after the deploy). `provision.sh deploy` keeps `rules.local/` and rebuilds `rules.live/` from it.
+
+### Scrape targets and Postgres on the app server
+
+Alloy loads every `*.alloy` file of `/opt/ops-agent/alloy/` as one configuration, so your files can use components of `config.alloy` such as `prometheus.remote_write.ops.receiver`. Your files are named `local-*.alloy`, and the component names must be unique across all files, so use a `local_` prefix.
+
+- **Secrets** (a Bearer token of an app, the DSN of a database) go into `/opt/ops-agent/secrets.env` on the app server (mode 600, never in Git, `agent.sh` never writes or deletes it) and are read in the Alloy file with `sys.env("NAME")`. Restart Alloy after a change: `cd /opt/ops-agent && docker compose up -d --force-recreate`.
+- **Copy the files** with `ALLOY_LOCAL_DIR=../<your-repo>/alloy deploy/app-host/agent.sh deploy`. The folder may hold only `local-*.alloy` files; anything else stops the script before it copies. A file you delete from the folder is deleted on the server. Without the variable `deploy` keeps what is there. After this upgrade the Compose file of the app server has changed, so run `agent.sh deploy` once (it recreates the container).
+- **Examples** to copy and adapt are in `deploy/app-host/alloy/examples/`: `local-app-metrics.alloy` (the `/metrics` endpoint of an app behind a Bearer token, found by its Coolify resource name in the Docker network `coolify`, with the labels `job`, `service` and `host`) and `local-postgres.alloy` (one database).
+
+### Postgres monitoring
+
+`deploy/vmalert/rules/postgres.yml` has five rules: `PostgresDown` (`pg_up == 0`), `PostgresConnectionsHigh` (backends above 80 % of `max_connections` for 10 minutes), `PostgresDeadlocks`, `PostgresLongTransaction` (a transaction open longer than 10 minutes) and `PostgresExporterFailing` (the exporter's scrape fails). They need no setting: without the Postgres example in use there are no `pg_*` series and they stay silent. `PostgresExporterFailing` looks for `job="postgres"`, which the relabel block of `examples/local-postgres.alloy` sets; keep that block if you write your own exporter file.
+
+1. **Create a monitoring role** in each database server. It gets `pg_monitor` and nothing else:
+   ```sql
+   CREATE ROLE pikett_monitor LOGIN PASSWORD '<password>';
+   GRANT pg_monitor TO pikett_monitor;
+   ```
+   In a Coolify-managed Postgres open the terminal of the database resource (Coolify, resource, Terminal) and run `psql -U <superuser> -d <database>` first. The role belongs to the database server, so one role covers every database on it; the DSN of each database names the database to look at.
+2. **Put the connection string** into `secrets.env`: `PG_ACME_DSN=postgresql://pikett_monitor:<password>@<database-container>:5432/<database>?sslmode=disable`. The host is the container name of the database in the Docker network `coolify` (`docker ps` on the app server), and `sslmode=disable` is acceptable only inside that network. Special characters in the password have to be URL-encoded, and a value with a `$` goes in single quotes (Compose would read `$name` as a variable).
+3. **Copy `examples/local-postgres.alloy`** to your repository as `local-postgres.alloy`, adapt the names (one component pair per database server: the exporter reports all databases of the server it connects to) and run `agent.sh deploy`. Docker Compose 2.24 or later is needed on the app server (`env_file` with `required: false`).
+
+The analyst needs no change: its metric tools take any query, so it can ask for `pg_stat_database_*`, `pg_locks_count` or `pg_settings_max_connections` on its own.
 
 ## Backup
 

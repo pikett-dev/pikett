@@ -62,7 +62,15 @@ services:
     secrets:
       - alert-token
     volumes:
-      - ../vmalert/rules:/rules:ro
+      # The shipped rules plus the installation's own (deploy/vmalert/rules.local/), put together by ops-deploy. The long
+      # form with create_host_path: false makes compose fail when the directory is missing, instead of creating an
+      # empty one that would leave vmalert without rules.
+      - type: bind
+        source: ../vmalert/rules.live
+        target: /rules
+        read_only: true
+        bind:
+          create_host_path: false
 
   # External uptime probes for the app server. The slim variant of the v2 line, pinned by digest so Renovate proposes
   # each rebuild: the full image bundles Chromium, whose actively exploited CVEs the KEV check reported. Only HTTP

@@ -133,7 +133,7 @@ cmd_deploy() {
   run rsync -az --delete --no-owner --no-group -e "ssh ${ssh_opts[*]}" \
     --exclude .git --exclude .venv --exclude __pycache__ --exclude '.*_cache' \
     --exclude deploy/ops-server/.env --exclude deploy/ops-server/ops-service.env --exclude dev/ops-service.env \
-    --exclude deploy/ops-server/alert-token \
+    --exclude deploy/ops-server/alert-token --exclude deploy/vmalert/rules.local --exclude deploy/vmalert/rules.live \
     "$repo/" "$target:/opt/ops/"
   say "Writing the env files (TAILSCALE_IP=$ts_ip, image built on the server)"
   if [ "$DRY_RUN" = 1 ]; then
@@ -149,6 +149,10 @@ cmd_deploy() {
       | ssh "${ssh_opts[@]}" "$target" 'umask 077; cat > /opt/ops/deploy/ops-server/alert-token'
   fi
   say "Building the image and starting the stack"
+  # vmalert mounts rules.live: the shipped rules, replaced by name with the own ones from rules.local. This is the
+  # manual path: sync_rules comes from ops-deploy.sh, so the merge is the same, but the vmalert check does not run.
+  rules_cmd='cd /opt/ops/deploy/vmalert && t="$(mktemp -d)" && cp rules/*.yml "$t"/ && { ! compgen -G "rules.local/*.yml" >/dev/null || cp rules.local/*.yml "$t"/; } && eval "$(sed -n "/^# --- rules:/,/^# --- end rules ---/p" ../ops-server/ops-deploy.sh)" && sync_rules "$t" rules.live; rc=$?; rm -rf "$t"; exit $rc'
+  run ssh "${ssh_opts[@]}" "$target" "bash -c '$rules_cmd'"
   run ssh "${ssh_opts[@]}" "$target" 'docker build -t pikett:latest /opt/ops && cd /opt/ops/deploy/ops-server && docker compose up -d --remove-orphans'
   say "Done. Check with: $0 status"
 }

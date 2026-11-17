@@ -1,6 +1,6 @@
 [project]
 name = "pikett"
-version = "0.5.2"
+version = "0.6.0"
 description = "Self-hosted AI incident analysis, alerting and patch management for small teams on Docker servers"
 readme = "README.md"
 license = "Apache-2.0"
