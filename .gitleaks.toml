@@ -11,6 +11,8 @@ regexes = [
   '''eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiIxMjM0NTYifQ\.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c''',
   # local Postgres of the dev stack
   '''postgresql\+asyncpg://ops:ops@localhost:5436/ops''',
+  # a type name, not a value: `signing_key: Ed25519PrivateKey` in signatures and tests
+  '''^Ed25519PrivateKey$''',
 ]
 paths = [
   '''uv\.lock''',
