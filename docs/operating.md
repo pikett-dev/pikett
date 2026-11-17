@@ -34,7 +34,9 @@ Most installations keep their configuration in a repository of their own (the fi
 - `PIKETT_VERSION`: one line with the release to run, for example `v0.5.0`. This is the place that decides which Pikett version runs. To upgrade or roll back, change the line and push.
 - a pipeline that reads the file and runs `ssh deploy@<ops-server> <that line>`: `deploy/ci/bitbucket-pipelines.example.yml` for Bitbucket Pipelines, `deploy/ci/github-actions-deploy.example.yml` for GitHub Actions. Each file starts with the setup steps (SSH key, Tailscale OAuth client, the variables).
 
-The pipeline key can run `ops-deploy` and nothing else (`provision.sh pipeline` writes it as `restrict,command=...` for the `deploy` user, with `OPS_DEPLOY_PUBKEY` as its public key), and `ops-deploy` accepts only a release tag or a full hash that is on `main` of the repository the server fetches from (`OPS_REPO_URL`). The pipeline holds no secret of Pikett: `.env`, `ops-service.env` and `alert-token` stay on the server. Every push to `main` runs the deploy. Pushing the same version again is harmless (the image is the same and compose recreates nothing), but it queues behind other deploys and takes a minute. The pins in the examples (actions by commit, the Tailscale image by digest) are yours to bump.
+The pipeline key can run `ops-deploy` and nothing else (`provision.sh pipeline` writes it as `restrict,command=...` for the `deploy` user, with `OPS_DEPLOY_PUBKEY` as its public key), and `ops-deploy` accepts only a release tag or a full hash that is on `main` of the repository the server fetches from (`OPS_REPO_URL`). `OPS_REPO_URL` is the URL the server fetches Pikett from. An `https://` URL of a public repository (for example `https://github.com/pikett-dev/pikett.git`) needs no key. A private repository needs an SSH URL; `provision.sh pipeline` then creates a read-only key on the server and prints it for you to add as a deploy key at your Git host. A URL with credentials (`https://user:token@...`) is refused, because the server would keep the token in its remote URL. If a server switches from an SSH to an HTTPS URL, remove the old deploy key at your Git host, and on the server delete `/root/.ssh/ops-repo` (and `.pub`), `/root/.ssh/known_hosts_repo` and the matching `Host` entry in `/root/.ssh/config`.
+
+The pipeline holds no secret of Pikett: `.env`, `ops-service.env` and `alert-token` stay on the server. Every push to `main` runs the deploy. Pushing the same version again is harmless (the image is the same and compose recreates nothing), but it queues behind other deploys and takes a minute. The pins in the examples (actions by commit, the Tailscale image by digest) are yours to bump.
 
 ## Backup
 
@@ -83,8 +85,8 @@ Removing the software does not remove the access you created for it:
 
 - **Slack:** delete the Pikett app (api.slack.com/apps). That revokes the bot and app tokens.
 - **Anthropic:** delete the API key used for `ANTHROPIC_API_KEY`.
-- **Bitbucket:** the repository access tokens (`BITBUCKET_READ_TOKENS`, `BITBUCKET_WRITE_TOKENS`), the read-only access key of the ops server and the SSH key of the pipeline.
+- **Bitbucket:** the repository access tokens (`BITBUCKET_READ_TOKENS`, `BITBUCKET_WRITE_TOKENS`).
 - **Coolify:** the API tokens of the service (read) and of the runners (read and deploy).
 - **Tailscale:** remove the ops server and the agents' machines, the tags and the rules from the tailnet policy, and any auth key that is still unused.
 - **ntfy:** stop using the topics; with a token, revoke it. **healthchecks.io:** delete the check.
-- **Your Git history and CI:** the pipeline variables that call `ops-deploy`.
+- **Your Git host and CI:** the read-only deploy key of the ops server (SSH URL only), the SSH key of the pipeline, and the pipeline variables that call `ops-deploy`.

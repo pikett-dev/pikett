@@ -4,12 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+- **`provision.sh pipeline` accepts an HTTPS `OPS_REPO_URL`** for a public repository, for example `https://github.com/pikett-dev/pikett.git`. The repository key, the host key and the SSH config entry are skipped for it. A URL that carries credentials (`https://user:token@...`) is refused, so the server never stores a token in a remote URL. SSH URLs work as before. Switching a server from SSH to HTTPS: see "Deploy from CI" in `docs/operating.md`.
+- Docs: deploy scripts and docs say "your Git host" and "the CI pipeline" where the text is not about Bitbucket.
+
 ## 0.5.0 - 2026-11-17
 
 One upgrade step first: run `provision.sh pipeline` once to install the new `ops-deploy` on the ops server.
 
 - **Deploy by release tag, and example pipelines.** `ops-deploy.sh` takes a release tag such as `v0.5.0` as well as a full commit hash (`ssh deploy@<ops-server> v0.5.0`); the server resolves the tag itself and, as before, deploys only a commit that is on `main`. `deploy/ci/` has ready-to-copy examples for Bitbucket Pipelines and GitHub Actions that deploy the version named in a one-line `PIKETT_VERSION` file; see "Deploy from CI" in `docs/operating.md`. **Upgrade: the server holds a copy of `ops-deploy.sh`, so run `provision.sh pipeline` once to install the new one (a deploy by hash does not replace it); until then the server knows only hashes.**
 
+- CI: the pinned GitHub Actions are updated (`actions/checkout` v7.0.1, `astral-sh/setup-uv` v10.3.3, both on Node 24).
 - Docs: the configuration table in the README and the runner env example no longer suggest that a catalog of your own is needed to name your servers.
 
 ## 0.4.0 - 2026-11-16

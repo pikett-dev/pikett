@@ -4,7 +4,8 @@
 # and what to deploy arrives as SSH_ORIGINAL_COMMAND: a release tag such as v1.2.3, or a full 40-character commit
 # hash. It checks out that commit, builds the image and restarts the stack. Env files stay on the server (they are
 # gitignored), so the pipeline never holds a secret.
-# Repository access (read-only key, Bitbucket host key) is configured in /root/.ssh/config by `provision.sh pipeline`.
+# For an SSH URL, repository access (read-only key, host key of your Git host) is configured in /root/.ssh/config by
+# `provision.sh pipeline`. A public HTTPS URL needs none.
 # The server holds a copy of this file: after changing it, run `provision.sh pipeline` again.
 set -euo pipefail
 

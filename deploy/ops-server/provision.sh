@@ -4,7 +4,7 @@
 #   provision.sh create     firewall and server (costs money, asks first)
 #   provision.sh join       installs Tailscale on the server and joins your tailnet
 #   provision.sh deploy     copies the repo and the two env files, builds the image, starts the stack (manual path)
-#   provision.sh pipeline   one-time setup so the Bitbucket pipeline can deploy (needs OPS_DEPLOY_PUBKEY)
+#   provision.sh pipeline   one-time setup so a CI pipeline can deploy (needs OPS_DEPLOY_PUBKEY and OPS_REPO_URL)
 #   provision.sh lockdown   closes public SSH once Tailscale SSH works
 #   provision.sh status     server, Tailscale address and a health check
 #
@@ -121,8 +121,8 @@ check_env_files() {
     || echo "warning: ALERT_TOKEN in .env is empty or shorter than 32 characters: the alert webhook stays open to the tailnet (openssl rand -hex 32)" >&2
 }
 
-# Manual path, e.g. while Bitbucket is down. It overwrites the working tree from this machine; the next pipeline run
-# checks out the pushed commit again.
+# Manual path, e.g. while your Git host or CI is down. It overwrites the working tree from this machine; the next
+# pipeline run checks out the pushed commit again.
 cmd_deploy() {
   [ "$DRY_RUN" = 1 ] || check_env_files
   target="$(ssh_target)"
@@ -153,23 +153,49 @@ cmd_deploy() {
   say "Done. Check with: $0 status"
 }
 
+# --- repo_url: tested by tests/test_provision_url.py, which extracts this block ---
+# Checks OPS_REPO_URL and sets repo_transport (ssh or https) and repo_host, or says why it is refused and returns 1.
+# The host is captured here, so the value that goes into the remote command can only hold letters, digits, dots and
+# dashes (not as the first character), and neither regex lets a space or a quote through. An ssh:// user may not carry a
+# password, and an https URL may not carry a query string or a fragment.
+parse_repo_url() {
+  local url="$1" ssh_re https_re
+  # A token in a remote URL ends up in .git/config on the server, so such a URL is never accepted.
+  if [[ "$url" =~ ^https?://[^/]*@ ]]; then
+    echo "OPS_REPO_URL must not carry credentials (https://user@... or https://user:token@...): the server would store them in the remote URL. Use a public https URL or an SSH URL." >&2
+    return 1
+  fi
+  # SSH: ssh://[user@]host[:port]/path or user@host:path (the server fetches with a read-only deploy key).
+  ssh_re="^(ssh://([^@/:[:space:]]+@)?([A-Za-z0-9][A-Za-z0-9.-]*)(:[0-9]+)?/|[^@/:[:space:]]+@([A-Za-z0-9][A-Za-z0-9.-]*):)[^[:space:]\"']+\$"
+  # HTTPS: only for a public repository, because there is nowhere to put a password.
+  https_re="^https://([A-Za-z0-9][A-Za-z0-9.-]*)(:[0-9]+)?/[^[:space:]\"'@?#]+\$"
+  if [[ "$url" =~ $ssh_re ]]; then
+    repo_transport=ssh
+    repo_host="${BASH_REMATCH[3]:-${BASH_REMATCH[5]}}"
+  elif [[ "$url" =~ $https_re ]]; then
+    repo_transport=https
+    repo_host="${BASH_REMATCH[1]}"
+  else
+    echo "OPS_REPO_URL must be an https URL of a public repository or an SSH URL, without spaces or quotes, for example https://github.com/pikett-dev/pikett.git or git@github.com:pikett-dev/pikett.git" >&2
+    return 1
+  fi
+}
+# --- end repo_url ---
+
 # One-time setup of the pipeline deploy: the deploy user, its sudoers rule, the wrapper, the restricted key and the
 # repository access. Safe to run again: it replaces the wrapper, the sudoers rule and the key, and keeps the repository
-# key. Run it again after every change to ops-deploy.sh, because the server holds a copy.
+# key. Run it again after every change to ops-deploy.sh, because the server holds a copy. With an https URL (public
+# repository) there is no repository key, host key or SSH config to set up.
 cmd_pipeline() {
   pubkey="${OPS_DEPLOY_PUBKEY:-}"
-  [ -n "$pubkey" ] || die "set OPS_DEPLOY_PUBKEY to the public key shown under Repository settings > Pipelines > SSH keys"
+  [ -n "$pubkey" ] || die "set OPS_DEPLOY_PUBKEY to the public key of the SSH key your CI pipeline uses (setup steps: deploy/ci/)"
   case "$pubkey" in ssh-*|ecdsa-*) ;; *) die "OPS_DEPLOY_PUBKEY does not look like a public key" ;; esac
   # No default: a default would point a new server at somebody else's repository.
   repo_url="${OPS_REPO_URL:-}"
-  [ -n "$repo_url" ] || die "set OPS_REPO_URL to the SSH URL of your clone of Pikett, for example
-  OPS_REPO_URL=git@github.com:pikett-dev/pikett.git $0 pipeline"
-  # SSH only (the server fetches with a read-only deploy key; an https URL would ask for a password):
-  # ssh://[user@]host[:port]/path or user@host:path, no spaces or quotes. The host is captured here, so the value that
-  # goes into the remote command below can only hold letters, digits, dots and dashes.
-  url_re="^(ssh://([^@/[:space:]]+@)?([A-Za-z0-9.-]+)(:[0-9]+)?/|[^@/:[:space:]]+@([A-Za-z0-9.-]+):)[^[:space:]\"']+\$"
-  [[ "$repo_url" =~ $url_re ]] || die "OPS_REPO_URL must be an SSH URL without spaces, for example git@github.com:pikett-dev/pikett.git"
-  repo_host="${BASH_REMATCH[3]:-${BASH_REMATCH[5]}}"
+  [ -n "$repo_url" ] || die "set OPS_REPO_URL to the URL of your clone of Pikett, for example
+  OPS_REPO_URL=https://github.com/pikett-dev/pikett.git $0 pipeline    (public repository, no key needed)
+  OPS_REPO_URL=git@github.com:pikett-dev/pikett.git $0 pipeline        (private repository, read-only deploy key)"
+  parse_repo_url "$repo_url" || exit 1
   target="$(ssh_target)"
 
   say "Installing the deploy wrapper, the sudoers rule and the restricted key on $target"
@@ -192,17 +218,21 @@ cmd_pipeline() {
       chmod 600 /home/deploy/.ssh/authorized_keys'
   fi
 
-  say "Preparing the read-only repository key and the host key of $repo_host"
-  run ssh "${ssh_opts[@]}" "$target" "repo_host='$repo_host'"'
-    set -e
-    install -d -m 700 /root/.ssh
-    [ -f /root/.ssh/ops-repo ] || ssh-keygen -q -t ed25519 -N "" -C ops-server-readonly -f /root/.ssh/ops-repo
-    ssh-keyscan -t ed25519 "$repo_host" 2>/dev/null > /root/.ssh/known_hosts_repo
-    ssh-keygen -lf /root/.ssh/known_hosts_repo
-    # One definition of how root reaches the repository; ops-deploy.sh and the fetch below rely on it.
-    printf "%s\n" "Host $repo_host" "  IdentityFile /root/.ssh/ops-repo" "  IdentitiesOnly yes" \
-      "  StrictHostKeyChecking yes" "  UserKnownHostsFile /root/.ssh/known_hosts_repo" > /root/.ssh/config
-    chmod 600 /root/.ssh/config'
+  if [ "$repo_transport" = ssh ]; then
+    say "Preparing the read-only repository key and the host key of $repo_host"
+    run ssh "${ssh_opts[@]}" "$target" "repo_host='$repo_host'"'
+      set -e
+      install -d -m 700 /root/.ssh
+      [ -f /root/.ssh/ops-repo ] || ssh-keygen -q -t ed25519 -N "" -C ops-server-readonly -f /root/.ssh/ops-repo
+      ssh-keyscan -t ed25519 "$repo_host" 2>/dev/null > /root/.ssh/known_hosts_repo
+      ssh-keygen -lf /root/.ssh/known_hosts_repo
+      # One definition of how root reaches the repository; ops-deploy.sh and the fetch below rely on it.
+      printf "%s\n" "Host $repo_host" "  IdentityFile /root/.ssh/ops-repo" "  IdentitiesOnly yes" \
+        "  StrictHostKeyChecking yes" "  UserKnownHostsFile /root/.ssh/known_hosts_repo" > /root/.ssh/config
+      chmod 600 /root/.ssh/config'
+  else
+    say "https URL: no repository key, host key or SSH config is set up (the repository has to be public)"
+  fi
 
   say "Turning /opt/ops into a git checkout of $repo_url (env files stay)"
   run ssh "${ssh_opts[@]}" "$target" "
@@ -216,6 +246,14 @@ cmd_pipeline() {
     git remote add origin '$repo_url'"
   say "SSH host key of the server for the pipeline variable OPS_SERVER_HOST_KEY (known_hosts line; the pipeline replaces the name with OPS_SERVER_HOST):"
   run ssh "${ssh_opts[@]}" "$target" 'echo "ops-server $(cut -d" " -f1,2 /etc/ssh/ssh_host_ed25519_key.pub)"'
+
+  if [ "$repo_transport" = https ]; then
+    # No password can be typed here: git must fail instead of asking (a private repository answers 401).
+    say "Fetching main over https"
+    run ssh -n "${ssh_opts[@]}" "$target" 'cd /opt/ops && GIT_TERMINAL_PROMPT=0 git fetch origin main && git reset -q origin/main' \
+      || die "the fetch over https failed (see the git message above). The repository has to be public; a private one needs an SSH URL."
+    return
+  fi
 
   # On a repeated run the access key is registered at the Git host already; then there is nothing to wait for.
   if [ "$DRY_RUN" != 1 ] && ssh -n "${ssh_opts[@]}" "$target" 'cd /opt/ops && git fetch -q origin main' 2>/dev/null; then
