@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+## 0.5.1 - 2026-11-17
+
 - **`provision.sh pipeline` accepts an HTTPS `OPS_REPO_URL`** for a public repository, for example `https://github.com/pikett-dev/pikett.git`. The repository key, the host key and the SSH config entry are skipped for it. A URL that carries credentials (`https://user:token@...`) is refused, so the server never stores a token in a remote URL. SSH URLs work as before. Switching a server from SSH to HTTPS: see "Deploy from CI" in `docs/operating.md`.
 - Docs: deploy scripts and docs say "your Git host" and "the CI pipeline" where the text is not about Bitbucket.
 
