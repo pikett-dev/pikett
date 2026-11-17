@@ -1,30 +1,54 @@
 #!/bin/bash
 # Deploy wrapper for the ops server. Installed as /usr/local/bin/ops-deploy by `provision.sh pipeline`.
 # The pipeline's SSH key may run only this script (authorized_keys: restrict,command="sudo /usr/local/bin/ops-deploy"),
-# and the commit to deploy arrives as SSH_ORIGINAL_COMMAND. It checks out that commit, builds the image and restarts
-# the stack. Env files stay on the server (they are gitignored), so the pipeline never holds a secret.
+# and what to deploy arrives as SSH_ORIGINAL_COMMAND: a release tag such as v1.2.3, or a full 40-character commit
+# hash. It checks out that commit, builds the image and restarts the stack. Env files stay on the server (they are
+# gitignored), so the pipeline never holds a secret.
 # Repository access (read-only key, Bitbucket host key) is configured in /root/.ssh/config by `provision.sh pipeline`.
 # The server holds a copy of this file: after changing it, run `provision.sh pipeline` again.
 set -euo pipefail
 
 repo=/opt/ops
 compose_dir="$repo/deploy/ops-server"
-sha="${SSH_ORIGINAL_COMMAND:-}"
+ref="${SSH_ORIGINAL_COMMAND:-}"
 
-if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
-  echo "expected a full 40-character commit SHA" >&2
-  exit 1
-fi
+# --- resolve_ref: tested by tests/test_ops_deploy_ref.py, which extracts this block ---
+ref_usage="expected a release tag such as v1.2.3 or a full 40-character commit hash"
+# A release tag (v1.2.3) or a full commit hash. Nothing else of the SSH command may reach git.
+valid_ref() { [[ "$1" =~ ^[0-9a-f]{40}$ || "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; }
+
+# main and the release tags, as origin has them right now. The tags go into a namespace of their own (forced, and
+# pruned): a tag that origin moved or deleted follows, and a tag created or left over in this checkout is never used.
+fetch_refs() {
+  git -C "$repo" fetch --quiet --prune origin main '+refs/tags/*:refs/remotes/origin/tags/*'
+}
+
+# What was asked for as a commit that is on main of origin.
+resolve_ref() {
+  local ref="$1" sha="$1"
+  valid_ref "$ref" || { echo "$ref_usage" >&2; return 1; }
+  if [[ "$ref" == v* ]]; then
+    sha="$(git -C "$repo" rev-parse --verify --quiet "refs/remotes/origin/tags/$ref^{commit}")" \
+      || { echo "tag $ref does not exist in origin" >&2; return 1; }
+  fi
+  # Only commits that are on main may be deployed, whatever the tag or hash points to.
+  git -C "$repo" merge-base --is-ancestor "$sha" origin/main \
+    || { echo "$ref ($sha) is not part of origin/main" >&2; return 1; }
+  printf '%s\n' "$sha"
+}
+# --- end resolve_ref ---
+
+# Refuse nonsense before waiting for the lock.
+valid_ref "$ref" || { echo "$ref_usage" >&2; exit 1; }
 
 # One deploy at a time; a second call waits instead of building next to the first.
 exec 9>/run/ops-deploy.lock
 flock -w 600 9 || { echo "another deploy is still running" >&2; exit 1; }
 
-echo "== Fetching main"
-git -C "$repo" fetch --quiet origin main
-# Only commits that are on main may be deployed, even if the pipeline was started from another branch.
-git -C "$repo" merge-base --is-ancestor "$sha" origin/main \
-  || { echo "$sha is not part of origin/main" >&2; exit 1; }
+echo "== Fetching main and the tags"
+fetch_refs
+sha="$(resolve_ref "$ref")"
+echo "== Deploying $ref ($sha)"
 git -C "$repo" checkout --quiet --force "$sha"
 
 cd "$compose_dir"

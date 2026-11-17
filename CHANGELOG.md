@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+- **Deploy by release tag, and example pipelines.** `ops-deploy.sh` takes a release tag such as `v0.5.0` as well as a full commit hash (`ssh deploy@<ops-server> v0.5.0`); the server resolves the tag itself and, as before, deploys only a commit that is on `main`. `deploy/ci/` has ready-to-copy examples for Bitbucket Pipelines and GitHub Actions that deploy the version named in a one-line `PIKETT_VERSION` file; see "Deploy from CI" in `docs/operating.md`. **Upgrade: the server holds a copy of `ops-deploy.sh`, so run `provision.sh pipeline` once to install the new one (a deploy by hash does not replace it); until then the server knows only hashes.**
+
 - Docs: the configuration table in the README and the runner env example no longer suggest that a catalog of your own is needed to name your servers.
 
 ## 0.4.0 - 2026-11-16

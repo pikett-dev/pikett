@@ -1,0 +1,48 @@
+# Example: deploy the ops server from GitHub Actions. Copy it into the repository that holds your configuration as
+# .github/workflows/deploy.yml, together with a one-line file PIKETT_VERSION that names the release to run (for example
+# v0.5.0). A push to main then deploys that release; to upgrade or roll back, change the line and push.
+#
+# One-time setup (docs/operating.md, "Deploy from CI"):
+#   1. Create an SSH key pair for CI. Its public key is OPS_DEPLOY_PUBKEY for `deploy/ops-server/provision.sh pipeline`,
+#      which lets that key run ops-deploy and nothing else on the server. The private key is the secret OPS_DEPLOY_KEY.
+#   2. Tailscale: an OAuth client with the writable `auth_keys` scope for tag:pikett-ci (secrets TS_OAUTH_CLIENT_ID and
+#      TS_OAUTH_SECRET), and the optional tag:pikett-ci rule of deploy/tailscale-acl.example.hujson (the CI node may
+#      reach tcp:22 of the ops server, nothing else).
+#   3. Secrets: OPS_SERVER_HOST (the ops server's name on the tailnet) and OPS_SERVER_HOST_KEY (the known_hosts line
+#      that `provision.sh pipeline` prints).
+name: deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency: deploy  # one deploy at a time
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:pikett-ci
+          ping: ${{ secrets.OPS_SERVER_HOST }}  # wait until the ops server is reachable
+      - name: deploy
+        env:
+          OPS_SERVER_HOST: ${{ secrets.OPS_SERVER_HOST }}
+          OPS_SERVER_HOST_KEY: ${{ secrets.OPS_SERVER_HOST_KEY }}
+          OPS_DEPLOY_KEY: ${{ secrets.OPS_DEPLOY_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$OPS_DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # OPS_SERVER_HOST_KEY is a known_hosts line; its first field is replaced by OPS_SERVER_HOST.
+          echo "$OPS_SERVER_HOST $(echo "$OPS_SERVER_HOST_KEY" | cut -d' ' -f2,3)" >> ~/.ssh/known_hosts
+          # What goes over SSH is the release tag; the server resolves it and refuses anything that is not on main.
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "deploy@$OPS_SERVER_HOST" "$(tr -d '[:space:]' < PIKETT_VERSION)"

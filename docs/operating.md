@@ -7,9 +7,10 @@ Upgrade, back up and uninstall. Paths assume the layout of the install guide: th
 1. **Read the [CHANGELOG](../CHANGELOG.md)** for every version between yours and the new one. The upgrade notes come first in each entry. `/health` on the ops service shows the running version (the commit of the image).
 2. **Take a backup** (next section). Migrations only go forward: going back to an older version means restoring the dump from before the upgrade.
 3. **Check what the notes ask for before you deploy.** Typical items: a new variable in `.env` or `ops-service.env`, a file that must exist on the server (`alert-token`), a re-run of `provision.sh pipeline` after a change to `ops-deploy.sh` (the server holds a copy of it).
-4. **Deploy the ops server.** `ops-deploy.sh` takes the full 40-character commit hash of a commit that is on `main`. For a release tag, get it with `git rev-parse <tag>^{commit}`.
-   - From your CI or your machine, with the pipeline key (a CI runner on the tailnet needs the optional `tag:pikett-ci` rule of the tailnet policy): `ssh -i <pipeline-key> deploy@<ops-server> <full-hash>`.
-   - By hand as root on the server: `SSH_ORIGINAL_COMMAND=<full-hash> /usr/local/bin/ops-deploy`.
+4. **Deploy the ops server.** `ops-deploy.sh` takes a release tag such as `v1.2.3` or the full 40-character commit hash, and only deploys a commit that is on `main`. The server resolves a tag itself, so nobody has to look up the hash.
+   - From your CI or your machine, with the pipeline key (a CI runner on the tailnet needs the optional `tag:pikett-ci` rule of the tailnet policy): `ssh -i <pipeline-key> deploy@<ops-server> v1.2.3`. A pipeline that does this on every push is in the next section.
+   - By hand as root on the server: `SSH_ORIGINAL_COMMAND=v1.2.3 /usr/local/bin/ops-deploy`.
+   - A server that still has an `ops-deploy` from before 0.5.0 knows only hashes, and a deploy by hash does not replace that script: run `provision.sh pipeline` once to install the new one, then deploy by tag. The server follows origin for tags: a tag that origin moved points to its new commit, a deleted tag cannot be deployed, and a tag made on the server itself is ignored. Whatever the tag points to must still be on `main`.
    - Without the pipeline: `deploy/ops-server/provision.sh deploy` from your machine.
 
    The script checks out the commit, builds the image on the server, restarts the stack and waits for `/health`. If `/health` stays red it puts the previous image back.
@@ -25,6 +26,15 @@ Upgrade, back up and uninstall. Paths assume the layout of the install guide: th
    - `/ops` lists every check with a recent run, and the runner card of each server shows a heartbeat with the new version.
    - `docker compose logs --since 10m ops-service vmalert` has no `rejected` lines (a wrong `ALERT_TOKEN`) and no tracebacks.
    - Send a test alert (for example with `curl` and the bearer token) and resolve it.
+
+## Deploy from CI
+
+Most installations keep their configuration in a repository of their own (the filled-in `ops-service.env.example`, notes) and want a push to deploy. Two files in that repository do it:
+
+- `PIKETT_VERSION`: one line with the release to run, for example `v0.5.0`. This is the place that decides which Pikett version runs. To upgrade or roll back, change the line and push.
+- a pipeline that reads the file and runs `ssh deploy@<ops-server> <that line>`: `deploy/ci/bitbucket-pipelines.example.yml` for Bitbucket Pipelines, `deploy/ci/github-actions-deploy.example.yml` for GitHub Actions. Each file starts with the setup steps (SSH key, Tailscale OAuth client, the variables).
+
+The pipeline key can run `ops-deploy` and nothing else (`provision.sh pipeline` writes it as `restrict,command=...` for the `deploy` user, with `OPS_DEPLOY_PUBKEY` as its public key), and `ops-deploy` accepts only a release tag or a full hash that is on `main` of the repository the server fetches from (`OPS_REPO_URL`). The pipeline holds no secret of Pikett: `.env`, `ops-service.env` and `alert-token` stay on the server. Every push to `main` runs the deploy. Pushing the same version again is harmless (the image is the same and compose recreates nothing), but it queues behind other deploys and takes a minute. The pins in the examples (actions by commit, the Tailscale image by digest) are yours to bump.
 
 ## Backup
 

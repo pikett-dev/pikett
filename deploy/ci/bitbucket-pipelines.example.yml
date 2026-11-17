@@ -1,0 +1,35 @@
+# Example: deploy the ops server from Bitbucket Pipelines. Copy it into the repository that holds your configuration as
+# bitbucket-pipelines.yml, together with a one-line file PIKETT_VERSION that names the release to run (for example v0.5.0).
+# A push to main then deploys that release; to upgrade or roll back, change the line and push.
+#
+# One-time setup (docs/operating.md, "Deploy from CI"):
+#   1. Repository settings > Pipelines > SSH keys: create a key pair. Its public key is OPS_DEPLOY_PUBKEY for
+#      `deploy/ops-server/provision.sh pipeline`, which lets that key run ops-deploy and nothing else on the server.
+#   2. Tailscale: an OAuth client with the writable `auth_keys` scope for tag:pikett-ci, and the optional tag:pikett-ci
+#      rule of deploy/tailscale-acl.example.hujson (the CI node may reach tcp:22 of the ops server, nothing else).
+#   3. Repository variables: TS_OAUTH_SECRET (secured), OPS_SERVER_HOST (the ops server's name on the tailnet) and
+#      OPS_SERVER_HOST_KEY (the known_hosts line that `provision.sh pipeline` prints).
+pipelines:
+  branches:
+    main:
+      - step:
+          name: deploy to the ops server
+          image: tailscale/tailscale:v1.102.5@sha256:c507f3a2a6ab1cabd8d809b98edeb41edbd5c3fb6ad9632ffd098b4c7d0b4065
+          deployment: production
+          script:
+            - apk add --no-cache openssh-client
+            # Bitbucket does not allow privileged containers: no TUN device, so tailscaled runs in userspace mode.
+            # The node is ephemeral and tagged; the tailnet policy lets that tag reach port 22 of the ops server only.
+            - "tailscaled --tun=userspace-networking --state=mem: --socket=/tmp/tailscaled.sock &"
+            # `tailscale up` does not retry, so wait until the daemon has created its socket.
+            - timeout 30 sh -c 'until [ -S /tmp/tailscaled.sock ]; do sleep 0.5; done'
+            - tailscale --socket=/tmp/tailscaled.sock up --auth-key="${TS_OAUTH_SECRET}?ephemeral=true&preauthorized=true" --advertise-tags=tag:pikett-ci --hostname="ci-${BITBUCKET_BUILD_NUMBER}"
+            - tailscale --socket=/tmp/tailscaled.sock wait --timeout=60s
+            # OPS_SERVER_HOST_KEY is a known_hosts line; its first field is replaced by OPS_SERVER_HOST.
+            - mkdir -p ~/.ssh
+            - echo "$OPS_SERVER_HOST $(echo "$OPS_SERVER_HOST_KEY" | cut -d' ' -f2,3)" >> ~/.ssh/known_hosts
+            # What goes over SSH is the release tag; the server resolves it and refuses anything that is not on main.
+            - ssh -o StrictHostKeyChecking=yes -o ProxyCommand="tailscale --socket=/tmp/tailscaled.sock nc %h %p" "deploy@$OPS_SERVER_HOST" "$(tr -d '[:space:]' < PIKETT_VERSION)"
+          after-script:
+            # Remove the node right away instead of waiting for the ephemeral timeout.
+            - tailscale --socket=/tmp/tailscaled.sock logout || true

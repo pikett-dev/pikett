@@ -107,6 +107,8 @@ curl -fsS http://<tailscale-ip>:8030/health
 
 **Check:** all containers are `running` or `healthy`, `/health` answers `{"status":"ok",...}`, `http://<tailscale-ip>:8030/ops` opens in the human's browser over Tailscale. No port is reachable from the public internet (`ss -tlnp` shows only the Tailscale IP and SSH). Without a token the service logs `ALERT_TOKEN is not set`; with it, `curl -s -o /dev/null -w '%{http_code}' -X POST http://<tailscale-ip>:8030/api/v2/alerts -H 'Content-Type: application/json' -d '[]'` answers `401`.
 
+**Optional: deploys from CI.** Not needed to finish the install. If the human wants a push to deploy, point them to `docs/operating.md`, section "Deploy from CI" (it needs `provision.sh pipeline` and the examples in `deploy/ci/`).
+
 **Tailnet policy (the human does this in the Tailscale admin console; you do not).** The web UI has no login and the telemetry ports (9428, 8428, 10428) accept reads and writes from every device in the tailnet, so the access control is the tailnet policy. Ask the human to:
 
 1. Open the admin console, Access controls, and merge `deploy/tailscale-acl.example.hujson` into the policy: replace the e-mail addresses in `group:pikett-team` and the address in the `tests` block (a failing test makes Tailscale refuse the policy), keep their other rules, and remove any broad `"src": ["*"], "dst": ["*"]` rule once these cover what the team needs. The file's `tests` must pass.

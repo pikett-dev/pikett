@@ -200,7 +200,7 @@ The steps below are the path we use. Each folder under `deploy/` has a README wi
 3. **Slack.** Create the app from `deploy/slack-app-manifest.json` (upload `docs/assets/pikett-icon-512.png` under Basic Information > Display Information), enable Socket Mode, invite the bot to an alerts channel and an ops channel, and set `SLACK_*`.
 4. **App servers.** Install Alloy (`deploy/app-host/`), the host collector (`deploy/host-agent/`) and, if you want actions, the runner (`deploy/runner/`). Point your applications' OTLP exporter at Alloy.
 5. **Alert rules.** Adjust `deploy/vmalert/rules/*.yml` to your services (error rate, slow routes, disk, memory, missing containers, watchdog).
-6. **Deploys.** `deploy/ops-server/ops-deploy.sh <sha>` checks out a commit on the ops server, builds the image there (no registry needed), restarts the service and rolls back if `/health` stays red. Call it from your CI over Tailscale, or by hand.
+6. **Deploys.** `deploy/ops-server/ops-deploy.sh <release tag or commit>` checks out that commit of `main` on the ops server, builds the image there (no registry needed), restarts the service and rolls back if `/health` stays red. Call it from your CI over Tailscale (examples in `deploy/ci/`, see `docs/operating.md`, "Deploy from CI"), or by hand.
 
 ## Configuration
 
