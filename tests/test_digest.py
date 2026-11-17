@@ -1,6 +1,8 @@
+import logging
 from datetime import UTC, datetime, timedelta
 
 import httpx
+import pytest
 
 from app.incidents.digest import build_digest
 from app.incidents.schemas import AlertIn
@@ -78,6 +80,27 @@ async def test_heartbeat_pings_the_configured_url(service, chat, sessions, clock
     await client.aclose()
 
     assert seen == ["https://hc-ping.com/abc"]
+
+
+@pytest.mark.parametrize("status", [404, 302])
+async def test_a_failed_heartbeat_does_not_put_the_ping_url_into_the_log(service, chat, sessions, caplog, status):
+    url = "https://monitor.example/api/push/secret-token-123"
+    headers = {"location": url + "?moved=1"} if status == 302 else {}
+    client = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(status, headers=headers)))
+    clock = Clock(datetime(2026, 10, 19, 10, 0, tzinfo=UTC))
+    jobs = Jobs(service, chat, sessions, clock, "http://ops.test", url, client, locale=EN)
+    caplog.set_level(logging.WARNING, logger="httpx")  # what the lifespan of the app does (test_alerts_auth)
+    with caplog.at_level(logging.DEBUG):
+        try:
+            await jobs.ping()
+        except RuntimeError as error:
+            assert str(status) in str(error)
+            # What the job loop does: the message and the whole traceback chain end up in the log.
+            logging.getLogger("app.jobs").exception("job %s failed", "heartbeat")
+        else:
+            raise AssertionError("a failed ping has to raise")
+    await client.aclose()
+    assert "secret-token-123" not in caplog.text
 
 
 async def test_the_tick_runs_the_analysis_step_and_an_error_in_it_does_not_stop_the_incident_step(

@@ -59,6 +59,9 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logging.basicConfig(level=settings.log_level)
+        # httpx logs every request URL at INFO; the heartbeat URL carries a token, so keep that out of the log.
+        for noisy in ("httpx", "httpcore"):
+            logging.getLogger(noisy).setLevel(logging.WARNING)
         if settings.alert_token is None:
             log.warning(
                 "ALERT_TOKEN is not set: POST /api/v2/alerts accepts alerts from every device that can reach this "

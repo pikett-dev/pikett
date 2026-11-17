@@ -67,3 +67,17 @@ def test_the_token_must_differ_from_the_other_tokens():
         Settings(alert_token=TOKEN, runner_tokens={"app-1": TOKEN})
     with pytest.raises(ValidationError, match="alert_token must differ"):
         Settings(alert_token=TOKEN, host_report_tokens={"app-1": TOKEN})
+
+
+def test_the_http_client_logs_no_request_urls(database_url, sessions):
+    # The heartbeat URL carries a token; httpx would write it to the log at INFO.
+    loggers = [logging.getLogger("httpx"), logging.getLogger("httpcore")]
+    before = [logger.level for logger in loggers]
+    try:
+        for logger in loggers:
+            logger.setLevel(logging.INFO)  # the state a plain `logging.basicConfig(level=INFO)` leaves behind
+        with _client(database_url, log_level="INFO"):
+            assert all(logger.level == logging.WARNING for logger in loggers)
+    finally:
+        for logger, level in zip(loggers, before, strict=True):
+            logger.setLevel(level)

@@ -124,8 +124,14 @@ class Jobs:
         """healthchecks.io alerts through its own channels when these pings stop."""
         if not self._ping_url:
             return
-        response = await self._client.get(self._ping_url, timeout=10)
-        response.raise_for_status()
+        try:
+            response = await self._client.get(self._ping_url, timeout=10)
+            response.raise_for_status()
+        except httpx.HTTPError as error:
+            # The ping URL carries the token of the monitor, and httpx puts the URL into its messages (and the
+            # location of a redirect). Say what failed without it; `from None` keeps the original out of the traceback.
+            status = error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None
+            raise RuntimeError(f"the heartbeat ping failed ({status or type(error).__name__})") from None
 
     async def run_scheduled(self) -> None:
         """The daily digest, the weekly report and the security jobs, each once per day when due."""
