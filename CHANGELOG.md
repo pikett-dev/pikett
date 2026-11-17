@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+- **Fix: `dev/alert.sh` works against a server that needs the token, and on Linux.** `ALERT_TOKEN_FILE=deploy/ops-server/alert-token` reads the token from the file, so it never shows up on screen or in a shell history (before, only `ALERT_TOKEN` or the local dev stack worked, and a remote `OPS_URL` got a 401). The script also runs with GNU `date`, so you can use it on the ops server.
+
 ## 0.6.1 - 2026-11-17
 
 No settings or schema changes. Deploy the release; for the container names, update the collector on each server (`/opt/ops-collect-src/install.sh`, see `deploy/host-agent/README.md`).
