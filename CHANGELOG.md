@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+## 0.6.2 - 2026-11-17
+
+No settings or schema changes. Deploy the release; vmalert loads the new rule within 30 seconds. Nothing else is required.
+
 - Docs: README, `docs/operating.md`, the install guide and the READMEs under `deploy/` match 0.6.1 again, after an audit against the scripts and the code. The ones that would have stopped an installation: the install guide's Option B needs `deploy/vmalert/rules.live/` before `compose up`; Option A keeps its configuration files on your machine (a later `provision.sh deploy` overwrites edits made on the server); `provision.sh join` needs `TS_AUTHKEY` and `lockdown` closes public SSH; app servers are tagged before the broad tailnet rule goes; `agent.sh` needs `TEST_HOST`, `HOST_NAME` and `OPS_HOST` (its defaults name `app-1`); the collector needs `TRIVY_SERVER` and `TRIVY_TOKEN`, and its default kinds already include CrowdSec and Lynis. Also: the heartbeat works with any push URL (Uptime Kuma, healthchecks.io), the full list of configuration files, which releases need `provision.sh pipeline` again, the new settings in the README table, and the README line on where Pikett runs.
 - Docs: the German button names in `ops-service.env.example` are English now, and `ops-deploy.sh` points to the right CHANGELOG section.
 - **Fix: the heartbeat URL no longer reaches the service log.** Its token (a healthchecks.io or Uptime Kuma push URL) was logged by httpx at INFO on every ping, and the error message of a failed ping carried the URL too. httpx and httpcore log at WARNING now, and a failed ping logs its status without the URL. If your container logs go somewhere other people can read them, replace the token of the monitor.
