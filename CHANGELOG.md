@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+## 0.5.2 - 2026-11-17
+
 - Docs: `docs/operating.md` has a section "Configuration files": the five files of an installation (`.env`, `ops-service.env`, `alert-token`, the runner's and the collector's env files), where each lives, what it holds, how it gets there, and what `provision.sh deploy` and `ops-deploy` do with them. The README, the install guide and the runner README point to it.
 
 ## 0.5.1 - 2026-11-17
