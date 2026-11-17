@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+## 0.6.1 - 2026-11-17
+
+No settings or schema changes. Deploy the release; for the container names, update the collector on each server (`/opt/ops-collect-src/install.sh`, see `deploy/host-agent/README.md`).
+
 - **Fix: a missing mailer is no failed patch run.** unattended-upgrades logs "No /usr/bin/mail or /usr/sbin/sendmail, can not send mail" at ERROR level after the upgrade when `Unattended-Upgrade::Mail` is set but the host has no mailer. That opened a P1 `PatchFailed` although the patches were installed. The line is ignored now; to stop it at the source, unset `Unattended-Upgrade::Mail` on the host.
 - **Fix: one odd backup run no longer makes the whole database unreadable.** The Coolify API sends `size: null` for a dump that is still running; that execution, or any one that does not parse, is skipped. Only a database whose executions are all unreadable raises `BackupCheckFailed`.
 - **Fix: the "Vulnerabilities" card on the overview** takes its freshness from the newest scan (`last_seen_at`) instead of showing "No run yet", turns overdue after 26 hours without a scan, and asks for action while any finding is actively exploited (KEV).
