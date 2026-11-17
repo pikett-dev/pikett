@@ -93,3 +93,5 @@ SSH_KNOWN_KEYS=[{"label":"backup","fingerprint":"SHA256:<fingerprint>","user":"r
 A known key is never reported from its networks at any time, so keep the networks as narrow as possible: a stolen key used from those networks stays silent.
 
 The collector needs no change: the journal line `Accepted publickey ... ssh2: ED25519 SHA256:...` already carries the fingerprint.
+
+**Coolify logs in over SSH.** Coolify manages its own server through SSH as `root`, from a Docker address, around the clock (about one login every quarter of an hour on a busy server). Without an entry for its key, every one of these logins is unusual. Add the key of the Coolify server (`ssh-keygen -lf` over the public key Coolify shows in its server settings) with `"user":"root"`, the narrowest network that covers the Docker bridge (`"172.17.0.0/16"` or the bridge's `/32`) and `"hosts":["app-1"]`. Once a key applies to a server, every other key on it needs an entry as well, your own admin key included.

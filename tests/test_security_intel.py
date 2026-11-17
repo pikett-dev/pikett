@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from app.models import EpssScore, KevEntry
+from app.security import overview
 from app.security.findings import Finding, FindingsReport, replace_findings
 from app.security.intel import MIN_KEV_ENTRIES, Epss, FeedError, HttpIntel, IntelCheck, Kev, parse_epss, parse_kev
 from app.security.signals import Signals
@@ -145,6 +146,23 @@ async def test_the_report_sorts_kev_first_then_epss_then_severity(sessions, sign
     assert lines[1].startswith("• LOW :rotating_light: KEV CVE-LOW-KEV glibc")
     assert lines[2].startswith("• HIGH EPSS 42 % CVE-HIGH-EPSS zlib")
     assert lines[3].startswith("• CRITICAL CVE-CRIT openssl")
+
+
+async def test_the_card_is_fresh_from_the_scans_and_asks_for_action_on_a_kev_finding(sessions, signals, clock):
+    await add_findings(sessions, clock, finding("CVE-2026-1"))
+    report = FindingsReport(sessions, locale=EN)
+    started = clock.now - timedelta(days=1)
+
+    [row] = await overview.build(EN, sessions, clock.now, [report], started)
+    assert (row.state, row.last_run) == (overview.OK, clock.now)
+
+    await IntelCheck(sessions, signals, clock, FakeIntel(kev=[kev("CVE-2026-1")]), locale=EN).refresh(clock.now)
+    [row] = await overview.build(EN, sessions, clock.now, [report], started)
+    assert row.state == overview.WARN
+
+    clock.advance(timedelta(hours=30))  # no scan for more than a day
+    [row] = await overview.build(EN, sessions, clock.now, [report], started)
+    assert row.state == overview.OVERDUE
 
 
 def test_parsing_the_feeds():

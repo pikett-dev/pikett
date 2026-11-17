@@ -175,6 +175,15 @@ def docker(*args: str, timeout: int = 60) -> str:
     return result.stdout
 
 
+def container_label(container: dict[str, Any]) -> str:
+    """What a person recognizes: the Coolify resource name when the container has one, else the Docker name.
+
+    Coolify names its containers after UUIDs (and adds a timestamp per deploy), which tell nobody which app it is.
+    """
+    labels = container.get("Config", {}).get("Labels") or {}
+    return str(labels.get("coolify.resourceName") or container["Name"].lstrip("/"))
+
+
 def running_images() -> list[dict[str, Any]]:
     """The images of the running containers, one entry per image with the containers that run it."""
     ids = docker("ps", "-q", "--no-trunc").split()
@@ -186,7 +195,8 @@ def running_images() -> list[dict[str, Any]]:
         entry = by_image.setdefault(
             image_id, {"image": container["Config"]["Image"], "image_id": image_id, "containers": []}
         )
-        entry["containers"].append(container["Name"].lstrip("/"))
+        if (label := container_label(container)) not in entry["containers"]:  # two deploys share a resource name
+            entry["containers"].append(label)
     return list(by_image.values())
 
 

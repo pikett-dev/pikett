@@ -11,19 +11,22 @@ BACKUP_DATABASES (Coolify database UUIDs), every 30 minutes:
 - the Coolify API cannot be read: P2 BackupCheckFailed, and the verdicts of the last good read stay
 """
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
 import httpx
-from pydantic import AwareDatetime, BaseModel, SecretStr, ValidationError
+from pydantic import AwareDatetime, BaseModel, SecretStr, ValidationError, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.i18n import Locale
 from app.security.base import CheckBase
 from app.security.signals import Signal, Signals
 from app.security.state import load_state, save_state
+
+log = logging.getLogger(__name__)
 
 TOO_OLD = "BackupTooOld"
 FAILED_RUN = "BackupFailed"
@@ -43,6 +46,12 @@ class Run(BaseModel):
     created_at: AwareDatetime
     s3_uploaded: bool | None = None
 
+    @field_validator("size", mode="before")
+    @classmethod
+    def _no_size_yet(cls, value: Any) -> Any:
+        """Coolify sends `null` while a dump is still running."""
+        return 0 if value is None else value
+
 
 @dataclass(frozen=True)
 class Database:
@@ -50,6 +59,20 @@ class Database:
     name: str
     schedules: list[str]  # cron expressions of the enabled schedules
     runs: list[Run]  # newest first
+    unreadable: int = 0  # executions the API sent that did not parse
+
+
+def parse_runs(executions: list[Any]) -> tuple[list[Run], int]:
+    """The executions that parse, and how many did not: one odd one must not hide all the others."""
+    runs: list[Run] = []
+    unreadable = 0
+    for execution in executions:
+        try:
+            runs.append(Run.model_validate(execution))
+        except ValidationError as exc:
+            log.warning("skipped an unreadable backup execution: %s", exc.errors(include_input=False))
+            unreadable += 1
+    return runs, unreadable
 
 
 class BackupError(Exception):
@@ -85,15 +108,15 @@ class CoolifyBackups:
         if not isinstance(info, dict) or not isinstance(schedules, list):
             raise BackupError(self._locale.t("security.backup.api_unexpected"))
         enabled = [s for s in schedules if isinstance(s, dict) and s.get("enabled")]
-        try:
-            runs = [Run.model_validate(run) for s in enabled for run in s.get("executions") or []]
-        except ValidationError as exc:
-            raise BackupError(self._locale.t("security.backup.api_unreadable", n=exc.error_count())) from exc
+        runs, unreadable = parse_runs([e for s in enabled for e in s.get("executions") or []])
+        if unreadable and not runs:
+            raise BackupError(self._locale.t("security.backup.api_unreadable", n=unreadable))
         return Database(
             uuid=uuid,
             name=str(info.get("name") or uuid),
             schedules=[str(s.get("frequency", "")) for s in enabled],
             runs=sorted(runs, key=lambda r: r.created_at, reverse=True),
+            unreadable=unreadable,
         )
 
 
@@ -112,8 +135,10 @@ def verdicts(locale: Locale, db: Database, now: datetime) -> dict[str, str]:
             age=locale.hours(now - good[0].created_at),
             limit=locale.hours(MAX_AGE),
         )
-    if db.runs and db.runs[0].status != "success":
-        found[FAILED_RUN] = locale.t("security.backup.failed_run", name=db.name, status=db.runs[0].status)
+    # A dump that is still running is no failure; the next check judges it.
+    latest = next((run for run in db.runs if run.status != "running"), None)
+    if latest is not None and latest.status != "success":
+        found[FAILED_RUN] = locale.t("security.backup.failed_run", name=db.name, status=latest.status)
     if len(good) > 1 and good[0].size < good[1].size * SHRINK_RATIO:
         found[SHRUNK] = locale.t(
             "security.backup.shrunk", name=db.name, new=locale.size(good[0].size), old=locale.size(good[1].size)
@@ -174,6 +199,7 @@ class BackupCheck(CheckBase):
                 "schedules": db.schedules,
                 "newest": good[0].model_dump(mode="json") if good else None,
                 "problems": sorted(found.values()),
+                "unreadable": db.unreadable,
             }
         async with self._sessions() as session, session.begin():
             await save_state(session, STATE, state, now)
@@ -210,4 +236,6 @@ class BackupCheck(CheckBase):
                     )
                 )
                 lines += [f"• {problem}" for problem in entry["problems"]]
+                if entry.get("unreadable"):
+                    lines.append(self._locale.t("security.backup.line.unreadable_runs", n=entry["unreadable"]))
         return lines

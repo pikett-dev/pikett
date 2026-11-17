@@ -55,6 +55,14 @@ FAILED_LOG = UU_LOG.replace(
 )
 
 
+MAIL_ONLY_LOG = UU_LOG.replace(
+    "2026-11-14 03:02:01,000 INFO All upgrades installed",
+    "2026-11-14 03:02:01,000 INFO All upgrades installed\n"
+    "2026-11-14 03:02:02,000 ERROR No /usr/bin/mail or /usr/sbin/sendmail, can not send mail. "
+    "You probably want to install the mailx package.",
+)
+
+
 def data(**overrides):
     base = {
         "log": UU_LOG,
@@ -77,6 +85,23 @@ def security(sessions, service, clock):
         [PatchCheck(sessions, signals, clock, [HOST], self_rebooting=[], locale=EN)],
         locale=EN,
     )
+
+
+def test_a_missing_mailer_is_no_failed_run():
+    run = parse_run(MAIL_ONLY_LOG, TZ)
+
+    assert run.errors == []
+    assert run.packages == ["libssl3t64", "openssl", "linux-image-6.8.0-49-generic"]
+
+
+def test_a_real_failure_still_counts_when_the_mailer_line_follows_it():
+    log = FAILED_LOG.replace(
+        "2026-11-14 03:02:01,001 ERROR error message",
+        "2026-11-14 03:02:01,001 ERROR No /usr/bin/mail or /usr/sbin/sendmail, can not send mail.\n"
+        "2026-11-14 03:02:01,002 ERROR error message",
+    )
+
+    assert [e.split(":")[0] for e in parse_run(log, TZ).errors] == ["Installing the upgrades failed!", "error message"]
 
 
 def test_the_last_run_is_read_from_the_log():

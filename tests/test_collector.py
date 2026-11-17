@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -76,6 +77,30 @@ def test_trivy_reports_an_unreachable_server(collector):
     data = collector.collect("trivy", {"TRIVY_SERVER": "http://127.0.0.1:9"})
 
     assert "not reachable" in data["error"]
+
+
+def test_running_images_name_containers_by_their_coolify_resource_when_they_have_one(collector, monkeypatch):
+    inspected = [
+        {
+            "Name": "/k3x9-2026",
+            "Image": "sha256:a",
+            "Config": {"Image": "core:abc", "Labels": {"coolify.resourceName": "core"}},
+        },
+        {
+            "Name": "/k3x9-2027",
+            "Image": "sha256:a",
+            "Config": {"Image": "core:abc", "Labels": {"coolify.resourceName": "core"}},
+        },
+        {"Name": "/plain", "Image": "sha256:a", "Config": {"Image": "core:abc", "Labels": None}},
+    ]
+
+    def fake_docker(*args, timeout=60):
+        return "id1\nid2\nid3\n" if args[0] == "ps" else json.dumps(inspected)
+
+    monkeypatch.setattr(collector, "docker", fake_docker)
+
+    [entry] = collector.running_images()
+    assert entry["containers"] == ["core", "plain"]
 
 
 def test_running_images_groups_containers_by_image(collector, monkeypatch):

@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from typing import Protocol
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models import HostReport
 
 
@@ -49,6 +51,10 @@ class Check(Protocol):
         """Evaluate a report of one of this check's kinds right after it was stored."""
         ...
 
+    async def data_as_of(self, session: AsyncSession) -> datetime | None:
+        """When the data behind this check's lines was gathered, besides the freshness of its reports and jobs."""
+        ...
+
     async def periodic(self, now: datetime) -> None:
         """Runs every few minutes, for verdicts that depend on data from several sources."""
         ...
@@ -70,6 +76,9 @@ class CheckBase:
         return []
 
     async def on_report(self, report: HostReport) -> None:
+        return None
+
+    async def data_as_of(self, session: AsyncSession) -> datetime | None:
         return None
 
     async def periodic(self, now: datetime) -> None:

@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+- **Fix: a missing mailer is no failed patch run.** unattended-upgrades logs "No /usr/bin/mail or /usr/sbin/sendmail, can not send mail" at ERROR level after the upgrade when `Unattended-Upgrade::Mail` is set but the host has no mailer. That opened a P1 `PatchFailed` although the patches were installed. The line is ignored now; to stop it at the source, unset `Unattended-Upgrade::Mail` on the host.
+- **Fix: one odd backup run no longer makes the whole database unreadable.** The Coolify API sends `size: null` for a dump that is still running; that execution, or any one that does not parse, is skipped. Only a database whose executions are all unreadable raises `BackupCheckFailed`.
+- **Fix: the "Vulnerabilities" card on the overview** takes its freshness from the newest scan (`last_seen_at`) instead of showing "No run yet", turns overdue after 26 hours without a scan, and asks for action while any finding is actively exploited (KEV).
+- **Container names:** the collector sends the Coolify resource name (`coolify.resourceName`) for a container that has the label, so Trivy and image lines name the app instead of a UUID with a deploy timestamp. Containers without the label keep their Docker name. Two containers of one resource under one image appear once.
+- Docs: `deploy/host-agent/README.md` explains why Coolify's own root logins show up as unusual and how to list its key in `SSH_KNOWN_KEYS`.
+
 ## 0.6.0 - 2026-11-17
 
 Upgrade, in this order: (1) `provision.sh pipeline` once, to install the new `ops-deploy` on the ops server (the server holds a copy of it; the old one does not build the rules folder that compose now needs, so `compose up` fails instead of starting vmalert without rules); (2) deploy the release; (3) `agent.sh deploy` on each app server, because its Compose file changed (Alloy now runs on a folder). If you edited the shipped `deploy/vmalert/rules/*.yml`, move those edits into `rules.local/` (same file name replaces the shipped file) before you deploy, or the next checkout overwrites them. Nothing else is required: without your own rules, Alloy files or Postgres the behaviour is the one of 0.5.2, plus the Postgres rules, which stay silent without Postgres metrics.

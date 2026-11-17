@@ -4,7 +4,7 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from app.security.backup import BackupCheck, BackupError, CoolifyBackups, Database, Run
+from app.security.backup import FAILED_RUN, BackupCheck, BackupError, CoolifyBackups, Database, Run, verdicts
 from app.security.service import SecurityService
 from app.security.signals import Signals
 from tests.fakes import EN
@@ -177,3 +177,39 @@ async def test_the_coolify_adapter_turns_http_errors_into_backup_errors():
     async with httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(401))) as client:
         with pytest.raises(BackupError, match="401"):
             await CoolifyBackups(client, "http://coolify.test", SecretStr("tok"), EN).database(DB)
+
+
+async def read_database(executions: list[dict]) -> Database:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == f"/api/v1/databases/{DB}":
+            return httpx.Response(200, json={"uuid": DB, "name": "app-db"})
+        return httpx.Response(200, json=[{"frequency": "0 3 * * *", "enabled": True, "executions": executions}])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        return await CoolifyBackups(client, "http://coolify.test/", SecretStr("tok"), EN).database(DB)
+
+
+async def test_one_unreadable_execution_does_not_hide_the_others():
+    result = await read_database(
+        [
+            {"status": "running", "size": None, "created_at": "2026-11-14T03:00:02Z"},
+            {"status": "failed", "created_at": "2026-11-14 03:00:00"},
+            {"status": "success", "size": 2668, "created_at": "2026-11-13T03:00:05Z", "s3_uploaded": True},
+        ]
+    )
+
+    assert [(r.status, r.size) for r in result.runs] == [("running", 0), ("success", 2668)]
+    assert result.unreadable == 1
+
+
+async def test_only_unreadable_executions_make_the_database_unreadable():
+    with pytest.raises(BackupError, match="1 unreadable"):
+        await read_database([{"status": "success", "size": "big", "created_at": "2026-11-14T03:00:02Z"}])
+
+
+def test_a_running_dump_is_no_failed_run():
+    now = datetime.fromisoformat("2026-11-14T10:00:00+00:00")
+    runs = [Run(status="running", created_at=now), Run(status="success", size=10, created_at=now - timedelta(hours=20))]
+    db = Database(uuid=DB, name="app-db", schedules=["0 3 * * *"], runs=runs)
+
+    assert FAILED_RUN not in verdicts(EN, db, now)

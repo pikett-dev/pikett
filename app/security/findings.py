@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -15,6 +15,7 @@ from app.i18n import Locale
 from app.models import VulnerabilityFinding
 from app.security.base import CheckBase
 from app.security.intel import epss_scores, kev_cves
+from app.security.lines import Line
 
 SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN")
 SEVERITY_RANK = {name: rank for rank, name in enumerate(SEVERITIES)}
@@ -148,6 +149,10 @@ class FindingsReport(CheckBase):
         self._locale = locale
         self._sessions = sessions
 
+    async def data_as_of(self, session: AsyncSession) -> datetime | None:
+        """The newest scan that saw a finding: every scan of a source and scope refreshes `last_seen_at`."""
+        return await session.scalar(select(func.max(VulnerabilityFinding.last_seen_at)))
+
     async def daily_lines(self, now: datetime) -> list[str]:
         async with self._sessions() as session:
             findings = await all_findings(session)
@@ -161,7 +166,8 @@ class FindingsReport(CheckBase):
         if exploited:
             summary += self._locale.t("security.findings.exploited", n=exploited)
         ranked = rank(findings, kev, epss)
-        lines = [self._locale.t("security.findings.head", n=len(findings), summary=summary)]
+        head = self._locale.t("security.findings.head", n=len(findings), summary=summary)
+        lines: list[str] = [Line(head, needs_action=bool(exploited))]
         lines += [f"• {describe(self._locale, f, kev, epss)}" for f in ranked[:DIGEST_ITEMS]]
         if len(ranked) > DIGEST_ITEMS:
             lines.append(self._locale.t("security.findings.more", n=len(ranked) - DIGEST_ITEMS))

@@ -34,6 +34,9 @@ SHOWN_PACKAGES = 8
 _LOG_LINE = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d),\d+ (\w+) (.*)$")
 _DPKG_START = re.compile(r"^Log started: (\d{4}-\d\d-\d\d)\s+(\d\d:\d\d:\d\d)")
 _RESTART = re.compile(r"^\s*systemctl restart (.+)$")
+# `Unattended-Upgrade::Mail` is set but the host has no mailer. unattended-upgrades logs that at ERROR level after the
+# upgrade is done; the patches are installed, so it is no failed run.
+_NO_MAILER = "can not send mail"
 
 
 @dataclass
@@ -60,7 +63,7 @@ def parse_run(log: str, tz: tzinfo) -> PatchRun:
             run = PatchRun(started_at=_local(stamp, tz))
         elif text.startswith("Packages that will be upgraded:"):
             run.packages += text.split(":", 1)[1].split()
-        elif level in ("ERROR", "CRITICAL") or "upgrades failed" in text.lower():
+        elif (level in ("ERROR", "CRITICAL") and _NO_MAILER not in text) or "upgrades failed" in text.lower():
             run.errors.append(text[:300])
     return run
 

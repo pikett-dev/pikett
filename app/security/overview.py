@@ -1,7 +1,8 @@
 """What each security check last did and what it found, for the ops overview page.
 
 The freshness comes from the places the checks already write to: the host reports of the collectors, the run history
-of the scheduled jobs (ops_run) and the saved backup state. The result sentences are the lines the checks put in the
+of the scheduled jobs (ops_run), the saved backup state and the data a check names itself (`data_as_of`). The
+result sentences are the lines the checks put in the
 daily and weekly reports, so the page and Slack never disagree.
 """
 
@@ -119,6 +120,8 @@ async def _cadence_and_state(
         if run is not None and run.status == "failed":
             state = _worse(state, PROBLEM)
             extra.append(locale.t("web.overview.last_run_failed", summary=run.summary))
+    if (data_as_of := await check.data_as_of(session)) is not None:
+        judge(data_as_of, DAILY)
     saved = await load_state(session, BACKUP_STATE) if type(check).__name__ == "BackupCheck" else None
     if saved is not None:
         cadence.append(locale.t("web.cadence.half_hourly"))
