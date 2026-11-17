@@ -1,6 +1,6 @@
 # Example: deploy the ops server from GitHub Actions. Copy it into the repository that holds your configuration as
 # .github/workflows/deploy.yml, together with a one-line file PIKETT_VERSION that names the release to run (for example
-# v0.5.0). A push to main then deploys that release; to upgrade or roll back, change the line and push.
+# v0.6.1). A push to main then deploys that release; to upgrade, change the line and push (docs/operating.md, "Deploy from CI", says when a rollback needs the database dump).
 #
 # One-time setup (docs/operating.md, "Deploy from CI"):
 #   1. Create an SSH key pair for CI. Its public key is OPS_DEPLOY_PUBKEY for `deploy/ops-server/provision.sh pipeline`,

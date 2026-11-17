@@ -1,4 +1,4 @@
-// Example: Postgres metrics for one database, for the rules in deploy/vmalert/rules/postgres.yml.
+// Example: Postgres metrics for one database server, for the rules in deploy/vmalert/rules/postgres.yml.
 //
 // Copy this file into your own configuration repository as local-<something>.alloy (agent.sh with ALLOY_LOCAL_DIR
 // copies only files with that name). One component pair per database server: the exporter reports every database of

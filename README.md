@@ -13,7 +13,7 @@ Self-hosted incident analysis, alerting and patch management for small teams tha
 
 When something breaks, Pikett opens one incident per alert, posts it to a Slack thread, pages the person on call, and lets an AI analyst read logs, metrics, traces and the last deploys to find the cause. Every claim in the analysis has to quote a tool result. The analyst can only read. Anything that changes a server (restart, rollback, security patches, reboot) runs through a signed runbook catalog, and only after someone presses a button in Slack.
 
-It runs in production for a small product on a Hetzner server with Coolify, operated by two people. No Kubernetes required.
+It runs in production for two small products, each a handful of applications and microservices on a Hetzner server with Coolify and with its own ops server. No Kubernetes required.
 
 <p align="center">
   <picture>
@@ -51,9 +51,9 @@ It runs in production for a small product on a Hetzner server with Coolify, oper
 - Accepts alerts in the Alertmanager v2 format (`POST /api/v2/alerts`), so vmalert, Prometheus or anything that speaks that format can feed it.
 - One incident per alert, one Slack thread per incident, with buttons: acknowledge, mute 1 h / 24 h, analyse deeper.
 - P1 pages the person on call through [ntfy](https://ntfy.sh); without an acknowledgement after 10 minutes the second person is paged too. Weekly on-call rotation, `/oncall` in Slack.
-- Reminders in the thread (P1 every 30 min, P2 every 4 h) and "resolved after X min" on recovery.
-- A watchdog alert proves the alerting pipeline itself works. If Slack or ntfy are down for a moment, notifications are retried on the next tick (30 s). A heartbeat to [healthchecks.io](https://healthchecks.io) covers the case where the ops server itself dies.
-- A daily digest (08:00) with the night's patches, backups and security findings, and a weekly report (Monday) with security, Lynis trend and a review of alarms that look like false alarms.
+- Reminders in the thread (P1 every 30 min, at most 6; P2 every 4 h, at most 3) and "resolved after X min" on recovery.
+- A watchdog alert proves the alerting pipeline itself works. If Slack or ntfy are down for a moment, notifications are retried on the next tick (30 s). A heartbeat covers the case where the ops server itself dies: a plain `GET` every 5 minutes to [healthchecks.io](https://healthchecks.io) or any other push monitor that runs outside the ops server (an Uptime Kuma push monitor works too).
+- A daily digest (08:00) with the night's patches, backups and security findings, and a weekly report (Monday) with security findings, SSH and CrowdSec, image updates, the Coolify version, the Lynis trend and a review of alarms that look like false alarms.
 
 **AI incident analysis** (optional, Anthropic API)
 - Read-only tools: LogsQL against VictoriaLogs, PromQL against VictoriaMetrics, traces and span trees from VictoriaTraces, log templates (drain3) that compare the alert window with the window before, recent deploys with their commits and diffs.
@@ -73,7 +73,7 @@ It runs in production for a small product on a Hetzner server with Coolify, oper
 - After every action the health URLs are checked; red means a P1 with the rollback hint.
 
 **Security and patches**
-- Patch window at 03:00 with security updates only (unattended-upgrades) and needrestart; failed patch or red health check afterwards is a P1. Kernel reboots become a question in Slack.
+- Patch window at 03:00 with security updates only (unattended-upgrades) and needrestart; failed patch or red health check afterwards is a P1. A pending kernel reboot becomes a question in Slack (asked between 08:00 and 21:00, reboot on Sunday at 04:00 after the approval); servers in `SELF_REBOOTING_HOSTS`, normally the ops server, reboot themselves on Sunday at 05:00 instead.
 - Trivy scans of the running images against a central trivy-server, OSV scans of your repositories.
 - CISA KEV and EPSS: a finding that is actively exploited is a P1 immediately.
 - Image updates by registry digest (like Diun), Coolify version check.
@@ -82,18 +82,18 @@ It runs in production for a small product on a Hetzner server with Coolify, oper
 
 **Web UI** (Tailscale only)
 - `/ops`: one card per check with its last run and status, the AI budget, the runner heartbeat, actions waiting for approval.
-- `/ops/history`: everything that ran, filterable. `/ops/help`: what each check does. `/ops/actions/{id}`: one action. `/incidents/{id}`: timeline, analysis with its evidence, actions. (The old German paths `/ops/verlauf`, `/ops/hilfe` and `/ops/aktionen/{id}` redirect with `301`.)
+- `/ops/history`: everything that ran, filterable. `/ops/runs/{id}`: one check run. `/ops/help`: what each check does. `/ops/actions/{id}`: one action. `/incidents`: all incidents. `/incidents/{id}`: timeline, analysis with its evidence, actions. (The old German paths `/ops/verlauf`, `/ops/hilfe` and `/ops/aktionen/{id}` redirect with `301`.)
 
 ## How it works
 
 | Term | What it is |
 |---|---|
-| Ops server | The one server that runs Pikett and its backends (VictoriaLogs, VictoriaMetrics, VictoriaTraces, vmalert, Postgres, Uptime Kuma). It never runs your applications. |
+| Ops server | The one server that runs Pikett and its backends (VictoriaLogs, VictoriaMetrics, VictoriaTraces, vmalert, Postgres, trivy-server, Uptime Kuma with its MariaDB). It never runs your applications. |
 | App server | A server that runs your applications, usually with Coolify. You can have several. |
 | Pikett service (`ops-service`) | The FastAPI service on the ops server: incidents, the web UI, Slack and ntfy, the analyst, the security checks and the job queue for actions. |
 | Runner (`ops-runner`) | A small program on each app server (and on the ops server) that pulls approved jobs from the service, checks their signature and runs the matching runbook. |
 | Collector (`ops-collect`) | Read-only systemd timers on each server that read patch state, SSH logins, Lynis, CrowdSec and Trivy results and post them to the service as host reports. |
-| Alloy | Grafana Alloy on each app server: ships container logs, host and container metrics and your applications' OTLP traces to the ops server. |
+| Alloy | Grafana Alloy on each app server: ships container and host logs, host and container metrics and your applications' OTLP traces to the ops server. With your own `local-*.alloy` files it also scrapes your applications' `/metrics` and your Postgres databases. |
 | Runbook | One fixed action from the signed catalog in `runner/catalog.json` (restart a container, reboot, prune images). The analyst can propose one; it runs only after a Slack approval. |
 
 ```mermaid
@@ -105,6 +105,7 @@ flowchart LR
     runner["ops-runner<br/>pulls signed jobs"]
     coolifyLocal["Coolify API, local<br/>optional"]
     patch["unattended-upgrades<br/>needrestart, CrowdSec"]
+    scrape["App /metrics, Postgres<br/>optional, your own Alloy files"]
   end
   subgraph ops["Ops server, ports on Tailscale only"]
     vl[("VictoriaLogs")]
@@ -121,9 +122,10 @@ flowchart LR
     ntfy["ntfy"]
     llm["Anthropic API"]
     git["Bitbucket API"]
-    hc["healthchecks.io"]
+    hc["Heartbeat monitor<br/>healthchecks.io or similar"]
   end
   apps -- "OTLP, stdout logs" --> alloy
+  scrape -- "scraped by" --> alloy
   alloy -- "logs" --> vl
   alloy -- "metrics" --> vm
   alloy -- "traces" --> vt
@@ -143,21 +145,24 @@ flowchart LR
   svc -- "masked text" --> llm
   svc -- "diffs, fix PRs" --> git
   svc -- "heartbeat" --> hc
+  svc -- "deploy history, backups,<br/>version" --> coolifyLocal
 ```
+
+Not drawn: the collector, the runner and the patch tools also run on the ops server, and the security checks call CISA, FIRST, OSV and the container registries (see [Data that leaves your servers](#data-that-leaves-your-servers)). Uptime Kuma probes your applications and sends its own notifications; it is not connected to Pikett's incidents.
 
 Retention on the ops server: logs 30 days, metrics 90 days, traces 14 days. Every port of the ops server is bound to its Tailscale address.
 
 Why a separate ops server: if the app server dies (disk full, kernel panic, provider outage), monitoring on the same box dies with it. Scans and agent runs would also compete with your applications for memory, and a host cannot check whether it came back from its own reboot. The ops stack needs about 0.8 GB of RAM idle; a 4 GB VM is enough.
 
-Why VictoriaLogs and VictoriaMetrics: about 1 GB of RAM instead of 4 to 7 GB for Loki and Prometheus, and a plain HTTP API the analyst can query. All telemetry arrives as OTLP, so the backend can be swapped without touching your applications.
+Why VictoriaLogs and VictoriaMetrics: about 1 GB of RAM instead of 4 to 7 GB for Loki and Prometheus, and a plain HTTP API the analyst can query. Your applications talk OTLP to Alloy, so the backend can be swapped without touching them. Host, container and scraped metrics go to VictoriaMetrics by Prometheus remote write.
 
 ## Requirements
 
 **Ops server:** Ubuntu 24.04 (or another Debian-based system with systemd), Docker with the compose plugin, Tailscale.
 
-**App servers:** Ubuntu 24.04, Docker, Tailscale. Coolify is optional (see [Without Coolify](#without-coolify)).
+**App servers:** Ubuntu 24.04, Docker with Compose 2.24 or later, Tailscale. Coolify is optional (see [Without Coolify](#without-coolify)).
 
-**Accounts:** a Slack workspace where you can install an app. Optional: an Anthropic API key, an ntfy topic, healthchecks.io, Bitbucket repository access tokens.
+**Accounts:** a Slack workspace where you can install an app. Optional: an Anthropic API key, an ntfy topic, a heartbeat monitor (healthchecks.io or similar), Bitbucket repository access tokens.
 
 **Your applications** should log to stdout (JSON with `trace_id` is best) and export OTLP traces and metrics with `service.name`, `service.version` (the commit SHA) and `deployment.environment`.
 
@@ -176,13 +181,13 @@ dev/alert.sh resolve P1
 dev/compose.sh down -v              # stop and delete the data
 ```
 
-Without Slack tokens, messages are only logged (`docker compose logs ops-service`). To try Slack from your machine, create an app from `deploy/slack-app-manifest.json` and fill in the tokens in `dev/ops-service.env` (Socket Mode needs no public URL). `dev/ntfy-test.sh` sends a test page.
+Without Slack tokens, messages are only logged (`dev/compose.sh logs ops-service`). To try Slack from your machine, create an app from `deploy/slack-app-manifest.json` and fill in the tokens in `dev/ops-service.env` (Socket Mode needs no public URL). `dev/ntfy-test.sh` sends a test page.
 
 To run the service from source against a local Postgres:
 
 ```bash
 cp .env.example .env
-docker compose up -d                 # Postgres on port 5436 (compose project pikett)
+docker compose up -d ops-db          # Postgres on port 5436 (compose project pikett)
 uv sync
 uv run uvicorn app.main:create_app --factory --port 8030 --reload
 ```
@@ -195,22 +200,22 @@ Using an AI coding agent? Point it at [docs/install-with-an-ai-agent.md](docs/in
 
 The steps below are the path we use. Each folder under `deploy/` has a README with the details, an "Undo" section and the expected result.
 
-1. **Ops server.** `deploy/ops-server/provision.sh` creates a server at Hetzner with `hcloud`, joins it to your tailnet, copies the stack and starts it (`create`, `join`, `deploy`, `lockdown`, `status`; `DRY_RUN=1` prints every command first). On another provider, use `deploy/ops-server/cloud-init.yaml` and `firewall.json` as the template: no public ports except SSH until Tailscale SSH works.
+1. **Ops server.** `deploy/ops-server/provision.sh` creates a server at Hetzner with `hcloud`, joins it to your tailnet, copies the stack and starts it (`create`, `join`, `deploy`, `lockdown`, `status`; `DRY_RUN=1` prints every command first). Port 22 stays open to the internet until you run `lockdown` once Tailscale SSH works. On another provider, use `deploy/ops-server/cloud-init.yaml` and `firewall.json` as the template: no public ports except SSH until Tailscale SSH works.
 2. **Configuration.** Copy `deploy/ops-server/.env.example` to `.env` and `deploy/ops-server/ops-service.env.example` to `ops-service.env` on the server and fill them in. Both files stay on the server and are git-ignored; `docs/operating.md`, "Configuration files", lists all five configuration files (also the ones of the runner and the collector), where they live and how they get there. Generate `ALERT_TOKEN` (`openssl rand -hex 32`) and write the same value to the file `alert-token` next to `.env` (mode 600, also git-ignored): the service checks it, vmalert sends it. Then apply the tailnet policy from `deploy/tailscale-acl.example.hujson` (see [Security model](#security-model)).
 3. **Slack.** Create the app from `deploy/slack-app-manifest.json` (upload `docs/assets/pikett-icon-512.png` under Basic Information > Display Information), enable Socket Mode, invite the bot to an alerts channel and an ops channel, and set `SLACK_*`.
-4. **App servers.** Install Alloy (`deploy/app-host/`), the host collector (`deploy/host-agent/`) and, if you want actions, the runner (`deploy/runner/`). Point your applications' OTLP exporter at Alloy.
-5. **Alert rules.** The shipped rules cover error rate, slow routes, disk, memory, missing containers, Postgres and the watchdog (`deploy/vmalert/rules/*.yml`). Do not edit them: add your own files to `deploy/vmalert/rules.local/` (same name replaces a shipped file, `groups: []` switches it off) and send them with the deploy, see `docs/operating.md`, "Your own rules and scrape targets".
+4. **App servers.** Install Alloy (`deploy/app-host/`; set `TEST_HOST`, `HOST_NAME` and `OPS_HOST` for `agent.sh`, because the defaults name one server `app-1`), the host collector (`deploy/host-agent/`) and, if you want actions, the runner (`deploy/runner/`). Point your applications' OTLP exporter at Alloy.
+5. **Alert rules.** The shipped rules cover error rate, slow routes, disk, memory, missing containers, silent app servers, Postgres and the watchdog (`deploy/vmalert/rules/*.yml`). Do not edit them: add your own files to `deploy/vmalert/rules.local/` (same name replaces a shipped file, `groups: []` switches it off) and send them with the deploy, see `docs/operating.md`, "Your own rules and scrape targets".
 6. **Deploys.** `deploy/ops-server/ops-deploy.sh <release tag or commit>` checks out that commit of `main` on the ops server, builds the image there (no registry needed), restarts the service and rolls back if `/health` stays red. Call it from your CI over Tailscale (examples in `deploy/ci/`, see `docs/operating.md`, "Deploy from CI"), or by hand.
 
 ## Configuration
 
-All settings are environment variables, read by `app/config.py` (pydantic-settings). The commented template is `deploy/ops-server/ops-service.env.example`. The most important ones:
+The service reads its settings from environment variables in `app/config.py` (pydantic-settings). The commented template is `deploy/ops-server/ops-service.env.example`. Compose reads a second file, `.env` next to it, for `TAILSCALE_IP`, `OPS_IMAGE`, `ALERT_NOTIFIER_URL`, the database passwords and `TRIVY_TOKEN` (set it: without a token every device in the tailnet can use the trivy-server). The most important settings of the service:
 
 | Variable | Purpose |
 |---|---|
 | `PROJECT_NAME` | Name in the web UI and the analysis prompt |
 | `LANGUAGE` | `en` (default) or `de`: web UI, Slack messages, ntfy pushes, reports and the analysis |
-| `TIMEZONE` | IANA name, default `UTC`. Times are shown in it, and it sets the day for the digest time, the AI budget day, the on-call week, SSH quiet hours and the reboot window. Set it to the zone your servers use: their logs are read in it, and the timers in `deploy/` say `Europe/Vienna` |
+| `TIMEZONE` | IANA name, default `UTC`. Times are shown in it, and it sets the day for the digest time, the AI budget day, the on-call week, SSH quiet hours and the reboot window. Set it to the zone your servers use: their logs are read in it, and the timers in `deploy/` say `Europe/Vienna`. `cloud-init.yaml` also sets the system clock of a new ops server to `Europe/Vienna`, and the self-reboot cron runs on that clock |
 | `AGENT_STACK_DESCRIPTION` | A few sentences about your stack, so the analyst knows what it is looking at |
 | `DATABASE_URL` | Postgres of the ops service |
 | `BASE_URL` | URL of the ops service as your team reaches it (Tailscale), used for links in messages |
@@ -218,12 +223,15 @@ All settings are environment variables, read by `app/config.py` (pydantic-settin
 | `SLACK_ALLOWED_USERS` | Slack user IDs allowed to press buttons |
 | `ONCALL_PEOPLE`, `ONCALL_ANCHOR` | On-call rotation (name, Slack ID, ntfy topic) and the Monday it starts |
 | `NTFY_URL`, `NTFY_TOKEN` | Pager |
-| `HEALTHCHECKS_PING_URL` | Dead man's switch for the ops server itself |
-| `ALERT_TOKEN` | Bearer token of the alert webhook `POST /api/v2/alerts`, at least 32 characters (`openssl rand -hex 32`). Set it in `.env` (compose passes it to the service) and write the same value to `deploy/ops-server/alert-token`, which vmalert reads. Unset: the webhook accepts every caller in the tailnet and the service logs a warning at startup |
+| `HEALTHCHECKS_PING_URL` | Dead man's switch for the ops server itself: a `GET` every 5 minutes to any URL that answers 2xx (healthchecks.io, an Uptime Kuma push monitor). Redirects are not followed. The monitor must not run on the ops server, and its period plus grace time has to cover 5 minutes |
+| `ALERT_TOKEN` | Bearer token of the alert webhook `POST /api/v2/alerts`, at least 32 characters (`openssl rand -hex 32`), different from the runner and host-report tokens. Set it in `.env` (compose passes it to the service) and write the same value to `deploy/ops-server/alert-token`, which vmalert reads. Unset: the webhook accepts every caller in the tailnet and the service logs a warning at startup |
 | `SSH_KNOWN_KEYS` | Optional JSON list of expected SSH keys (label, fingerprint, user, networks, optional hosts). A login that matches is usual at any time; keep the networks narrow. Details in `deploy/host-agent/README.md` |
 | `SSH_KNOWN_USERS`, `SSH_ANY_TIME_USERS` | Users expected to log in over SSH, and those that may log in at night. List every user your CI or deploy pipeline uses, or each deploy raises an SSH alert |
 | `ANTHROPIC_API_KEY` | Turns the analyst on; without it there is no analysis and no analysis button |
-| `AGENT_MODEL`, `AGENT_DEEP_MODEL`, `AGENT_FALLBACK_MODEL`, `AGENT_DAILY_BUDGET_USD` | Model stages and daily budget |
+| `AGENT_MODEL`, `AGENT_DEEP_MODEL`, `AGENT_FALLBACK_MODEL`, `AGENT_DAILY_BUDGET_USD` | Model stages and daily budget. The three models must differ and must be priced in `app/agent/pricing.py`, or the service does not start |
+| `AGENT_AUTO_ANALYZE`, `AGENT_MAX_PARALLEL`, `AGENT_MAX_ITERATIONS`, `AGENT_MAX_TOKENS`, `AGENT_TIMEOUT_SECONDS` | Whether P1 and P2 are analysed without a button press, and the limits of one analysis (defaults in the env example) |
+| `SELF_REBOOTING_HOSTS` | Servers that reboot themselves on Sunday at 05:00 when a kernel update needs it (normally the ops server). Every other server gets a reboot question in Slack |
+| `CATALOG_FILE` | Your own runbook catalog, default `/etc/pikett/catalog.json`; see [Runbook catalog](#runbook-catalog) |
 | `HOST_REPORT_TOKENS`, `SECURITY_HOSTS` | One token per server for the collector; servers expected to report |
 | `COOLIFY_URL`, `COOLIFY_TOKEN`, `BACKUP_DATABASES` | Deploy history, Coolify version and backup checks |
 | `BITBUCKET_READ_TOKENS`, `BITBUCKET_WRITE_TOKENS` | Per repository: read for diffs and OSV, write for fix pull requests |
@@ -247,7 +255,7 @@ Every integration is optional. Without its settings a feature is switched off, n
 
 ### Without Coolify
 
-Coolify is used in four places: the deploy history for the analyst, the backup check, the Coolify version check, and the `container_restart` and `redeploy_previous` runbooks. Without `COOLIFY_URL` these are off and everything else runs. A deploy source for plain `docker compose` or another platform is a `ChangeSource` implementation (`app/agent/ports.py`) and a `Coolify`-like protocol in `runner/runbooks.py`. Contributions welcome.
+Coolify is used in four places: the deploy history for the analyst, the backup check, the Coolify version check, and the `container_restart` and `redeploy_previous` runbooks. Without `COOLIFY_URL` these are off and the service runs without them. The Alloy compose file on the app server attaches to the Docker network `coolify`; without Coolify, change the network in `deploy/app-host/compose.yml` to the one your applications use (both the `networks:` of the `alloy` service and the top-level `networks:` entry `coolify`, which is declared `external: true`). A deploy source for plain `docker compose` or another platform is a `ChangeSource` implementation (`app/agent/ports.py`) and a `Coolify`-like protocol in `runner/runbooks.py`. Contributions welcome.
 
 ### Runbook catalog
 
@@ -270,7 +278,7 @@ Found a vulnerability? See [SECURITY.md](SECURITY.md). Please do not open a publ
 
 ## Data that leaves your servers
 
-This is what the code sends today. The last column says what switches each destination on. Anthropic, Slack, Bitbucket, OSV, the Coolify release check and healthchecks.io stay silent until you set their tokens or URLs. The CISA, GitHub and FIRST downloads need no setup, and ntfy defaults to the public `ntfy.sh`.
+This is what the code sends today. The last column says what switches each destination on. Anthropic, Slack, Bitbucket, OSV, the Coolify release check and the heartbeat monitor stay silent until you set their tokens or URLs. The CISA, GitHub and FIRST downloads need no setup, and ntfy defaults to the public `ntfy.sh`.
 
 | Destination | What it receives | Switched on by |
 |---|---|---|
@@ -282,7 +290,9 @@ This is what the code sends today. The last column says what switches each desti
 | CISA, GitHub (KEV mirror), FIRST (EPSS) | Daily downloads of the known-exploited list (GitHub only as fallback). The EPSS request lists the CVE IDs of your current findings, so FIRST can tell which vulnerabilities you have, but not on which server or in which image. | Always on |
 | Container registries (Docker Hub, GHCR and others) | A `HEAD` request per running image with its repository and tag, to compare digests. The collector on a server pulls the Trivy image from Docker Hub when it is missing. | `SECURITY_HOSTS` and received `images` reports |
 | GitHub | A request for the latest Coolify release. | `COOLIFY_URL` and `COOLIFY_TOKEN` |
-| healthchecks.io | A plain `GET` of your ping URL, no payload. | `HEALTHCHECKS_PING_URL` |
+| Heartbeat monitor (healthchecks.io or similar) | A plain `GET` of your ping URL every 5 minutes, no payload. | `HEALTHCHECKS_PING_URL` |
+| Vulnerability database of the trivy-server | The trivy-server downloads its vulnerability database from a public registry (GHCR by default). | Always on, with the ops stack |
+| CrowdSec central API | CrowdSec is installed with its default configuration, which talks to CrowdSec's central API and shares signals about attackers. See the CrowdSec documentation to change that. | You install CrowdSec on a server (`deploy/host-agent/`) |
 
 Masking replaces JWTs, `Bearer` and `Basic` tokens, values next to keys such as `password`, `secret`, `token`, `api_key` and `authorization`, IBANs (checksum-validated), e-mail addresses and long random-looking tokens with placeholders. It does not touch IP addresses, people's names (commit authors stay readable), phone numbers, postal addresses, free text such as "the password is ...", base64 secrets that contain `+` or `/`, and 32-hex, 40-hex or UUID-shaped values that have no key such as `token=` in front.
 
@@ -299,7 +309,7 @@ Upgrade, backup and uninstall are described in [docs/operating.md](docs/operatin
 - **Slack only** for threads and approvals; ntfy is the pager.
 - **Debian/Ubuntu with systemd** on the servers (apt, unattended-upgrades, needrestart, Lynis).
 - **Anthropic only** for the analyst; the model sits behind a port (`app/agent/llm.py`), other providers are possible.
-- Coolify returns the last 20 deploys per application; applications with the same name in several Coolify environments are counted together.
+- Pikett asks Coolify for the last 20 deploys per application and the analyst's tool shows at most 10 per time window; applications with the same name in several Coolify environments are counted together.
 
 ## Development
 
@@ -315,15 +325,19 @@ Layout:
 ```
 app/            the ops service (FastAPI)
   agent/        analyst, tools, masking, budget, change correlation
+  api/          webhooks (alerts, host reports, runner) and request size limits
   incidents/    incident engine, digest, memory, weekly review
   security/     host reports and checks (Trivy, OSV, KEV/EPSS, patches, Lynis, CrowdSec, backups)
   actions/      runbook approvals, jobs, verification, fix pull requests
+  activity/     run log of the checks and the timeline
   notify/       Slack (Bolt), ntfy, message blocks
-  web/          UI templates
+  web/          pages, templates and static files
+  i18n/         message catalogs (en.json, de.json)
   migrations/   numbered SQL files, applied once at startup
 runner/         the ops-runner (standard library only) and the runbook catalog
-deploy/         ops server, app host (Alloy), host collector, runner units, vmalert rules, Slack manifest
+deploy/         ops server, app host (Alloy), host collector, runner units, vmalert rules, example CI pipelines (ci/), tailnet policy example, Slack manifest
 dev/            local all-in-one stack and test scripts
+docs/           operating guide, install guide for AI agents, logo and diagrams
 tests/
 ```
 

@@ -1,5 +1,5 @@
 # Postgres rules. Metrics come from prometheus.exporter.postgres in Alloy (deploy/app-host/alloy/examples/local-postgres.alloy)
-# with job="postgres", one instance per database and the label host=<name>. Without that example in use there are no
+# with job="postgres", one instance per database server and the label host=<name>. Without that example in use there are no
 # pg_* series and none of these rules can fire.
 groups:
   - name: postgres

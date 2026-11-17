@@ -39,11 +39,11 @@ The reboot job is created by the ops service only from a Slack approval, from th
    ```
    rsync -azR --exclude __pycache__ runner deploy/runner root@app-1:/opt/ops-runner-src/
    ```
-3. Put the public key at `/etc/ops-runner/job-signing.pub` (output of `python -m runner.keys public`).
+3. Put the public key at `/etc/ops-runner/job-signing.pub` (output of `python -m runner.keys public`). `install.sh` creates `/etc/ops-runner/` itself and stops when the key is missing, so either create the folder first (`mkdir -p /etc/ops-runner`) and put the key there, or let the first run of step 4 stop at the key check, put the key in the folder it created and run the script again.
    With your own catalog (README, "Runbook catalog"), copy it to the server too and give the path to the next step: `ssh root@app-1 CATALOG_FILE=<path on the server> /opt/ops-runner-src/deploy/runner/install.sh`. The script checks the file first and keeps it in `/etc/ops-runner/catalog.json`, so a later run without `CATALOG_FILE` leaves it in place.
 4. `ssh root@app-1 /opt/ops-runner-src/deploy/runner/install.sh` creates the user, directories and unit, and stops after creating `/etc/ops-runner/ops-runner.env`. Fill in `OPS_URL`, `RUNNER_TOKEN` and `HOST_NAME`, then run the script again (all configuration files at a glance: `docs/operating.md`, "Configuration files").
 5. Check: `systemctl status ops-runner` and `journalctl -u ops-runner -n 20`; the runner card in the ops UI shows the heartbeat.
 
-**Undo:** `systemctl disable --now ops-runner; rm /etc/systemd/system/ops-runner.service /etc/systemd/system/ops-runbook-*.service /etc/polkit-1/rules.d/50-ops-runner.rules; rm -r /opt/ops-runner /etc/ops-runner /var/lib/ops-runner; userdel ops-runner; systemctl daemon-reload`. Remove the server from `RUNNER_TOKENS`, or the missing heartbeat opens a P1.
+**Undo:** `systemctl disable --now ops-runner; rm /etc/systemd/system/ops-runner.service /etc/systemd/system/ops-runbook-*.service /etc/polkit-1/rules.d/50-ops-runner.rules; rm /etc/tmpfiles.d/ops-runbook.conf; rm -r /opt/ops-runner /opt/ops-runner-src /etc/ops-runner /var/lib/ops-runner; userdel ops-runner; systemctl daemon-reload`. Remove the server from `RUNNER_TOKENS`, or the missing heartbeat opens a P1.
 
 **Expected result:** a poll every 10 seconds and no errors in the journal. If you stop the runner, the ops service opens a P1 `RunnerSilent` after 3 minutes, which closes again when the runner is back.

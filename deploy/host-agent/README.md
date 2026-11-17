@@ -4,7 +4,7 @@
 
 If one read fails, the report arrives as `{"error": ...}` and the ops service reports it. If no report arrives at all, the ops service opens a P2 `HostReportMissing` once the deadline of that kind has passed. A broken collector does not stay silent.
 
-| Timer | Time (local) | List in `/etc/ops-collect.env` |
+| Timer | Time (`Europe/Vienna`, fixed in the units) | List in `/etc/ops-collect.env` |
 |---|---|---|
 | `ops-collect-hourly` | hourly at :17 | `HOURLY_KINDS` |
 | `ops-collect-daily` | 03:40, after the patch window | `DAILY_KINDS` |
@@ -13,8 +13,8 @@ If one read fails, the report arrives as `{"error": ...}` and the ops service re
 | Kind | What is read | Deadline for `HostReportMissing` |
 |---|---|---|
 | `patches` | unattended-upgrades logs, `needrestart -b -r l`, `reboot-required`, `HEALTH_URLS` | 26 h |
-| `images` | running containers with image and `RepoDigests` | 26 h |
-| `trivy` | a Trivy scan of every running image against the trivy-server on the ops server | 26 h |
+| `images` | running containers with image and `RepoDigests`; a container with the label `coolify.resourceName` is named by it (the app), other containers by their Docker name | 26 h |
+| `trivy` | a Trivy scan of every running image against the trivy-server on the ops server (`TRIVY_SERVER`, `TRIVY_TOKEN`); containers are named as for `images` | 26 h |
 | `crowdsec` | `cscli alerts list --since 25h` and `cscli decisions list`, shortened | 26 h |
 | `ssh` | successful SSH logins of the last 25 h from journald | 26 h |
 | `lynis` | `lynis audit system --cronjob`: score, warnings and suggestions from `/var/log/lynis-report.dat` | 8 days |
@@ -32,10 +32,18 @@ Backups are not read by the collector. The ops service checks them every 30 minu
    ```
    rsync -az deploy/host-agent/ root@app-1:/opt/ops-collect-src/
    ssh root@app-1 /opt/ops-collect-src/install.sh   # creates /etc/ops-collect.env and stops
-   ssh root@app-1 vi /etc/ops-collect.env            # OPS_URL, token, HOST_NAME, kind lists
+   ssh root@app-1 vi /etc/ops-collect.env            # OPS_URL, token, HOST_NAME, TRIVY_SERVER, TRIVY_TOKEN, kind lists
    ssh root@app-1 /opt/ops-collect-src/install.sh   # installs the timers and runs once
    ```
-3. Check: `journalctl -u ops-collect-hourly -n 20` shows no error and the incident page shows no new `HostReportMissing`.
+   The env example already lists `patches images ssh crowdsec trivy` in `DAILY_KINDS` and `lynis` in `WEEKLY_KINDS`, and `HOURLY_KINDS` is empty. Take a kind out of the list on a server that does not have its tool yet (CrowdSec, Lynis below), or its first run reports an error. `TRIVY_SERVER` is `http://<ops server tailscale ip>:4954` and `TRIVY_TOKEN` is the value of `TRIVY_TOKEN` in `.env` on the ops server.
+3. Check: `journalctl -u ops-collect-daily -n 20` shows no error and the incident page shows no new `HostReportMissing`.
+
+**Update** (after a release whose CHANGELOG mentions the collector): copy the folder and run the installer again; it keeps `/etc/ops-collect.env`.
+
+```
+rsync -az deploy/host-agent/ root@app-1:/opt/ops-collect-src/
+ssh root@app-1 /opt/ops-collect-src/install.sh
+```
 
 **Undo:** `systemctl disable --now ops-collect-hourly.timer ops-collect-daily.timer ops-collect-weekly.timer`, then `rm /etc/systemd/system/ops-collect-* /etc/ops-collect.env && rm -r /opt/ops-collect && systemctl daemon-reload`. Empty `SECURITY_HOSTS` in the ops service, or it reports the missing reports.
 
@@ -45,6 +53,8 @@ Backups are not read by the collector. The ops service checks them every 30 minu
 
 The files in `patching/` restrict unattended-upgrades to the security archives (`#clear` removes the release archive from Ubuntu's default list), set the window to 03:00 daily (package lists at 02:30) and let needrestart restart affected services without asking. `docker`, `containerd` and `tailscaled` are excluded: restarting them would stop every application container or cut the connection. Those services show up in the daily digest as "needs a manual restart". App servers never reboot on their own; a pending kernel reboot becomes a question in Slack. Hosts in `SELF_REBOOTING_HOSTS` (normally the ops server) reboot on Sunday at 05:00 when `reboot-required` exists.
 
+unattended-upgrades can mail a report when `Unattended-Upgrade::Mail` is set. A host without a mailer logs "No /usr/bin/mail or /usr/sbin/sendmail, can not send mail"; Pikett ignores that line (0.6.1), but you can unset `Unattended-Upgrade::Mail` to stop it at the source.
+
 The same files exist three times: in `patching/` for existing servers, as `patching/cloud-init-fragment.yaml` for new servers, and built into `deploy/ops-server/cloud-init.yaml`. `tests/test_patching_files.py` fails when the three drift apart.
 
 **Before:** Ubuntu's default unattended-upgrades (release and security archives, random time); needrestart asks interactively.
@@ -52,7 +62,7 @@ The same files exist three times: in `patching/` for existing servers, as `patch
 **Steps:**
 
 1. On each server: `rsync -az deploy/host-agent/ root@<server>:/opt/ops-collect-src/` and `ssh root@<server> /opt/ops-collect-src/patching/install-patching.sh`. At the end the script prints the allowed archives (only `-security`) and the new timer times.
-2. In `/etc/ops-collect.env` on each server, add `patches` to `DAILY_KINDS` and set `HEALTH_URLS` (app servers: the public health URLs of your applications; ops server: `http://<tailscale-ip>:8030/health`).
+2. In `/etc/ops-collect.env` on each server, check that `patches` is in `DAILY_KINDS` (it is in the default) and set `HEALTH_URLS` (app servers: the public health URLs of your applications; ops server: `http://<tailscale-ip>:8030/health`).
 3. For new servers, copy the entries from `patching/cloud-init-fragment.yaml` into your cloud-init under `write_files` and add `needrestart` to `packages`.
 4. Next morning: the daily digest has a "Patches (...)" line per server.
 
@@ -62,7 +72,7 @@ The same files exist three times: in `patching/` for existing servers, as `patch
 
 ## Lynis
 
-**Steps:** on each server `apt-get install -y lynis` and `WEEKLY_KINDS=lynis` in `/etc/ops-collect.env`. Run it once by hand with `systemctl start ops-collect-weekly.service` (takes a few minutes), then check `journalctl -u ops-collect-weekly -n 20`.
+**Steps:** on each server `apt-get install -y lynis`. `WEEKLY_KINDS=lynis` is the default in `/etc/ops-collect.env`; on a server without Lynis, empty it. Run it once by hand with `systemctl start ops-collect-weekly.service` (takes a few minutes), then check `journalctl -u ops-collect-weekly -n 20`.
 
 **Undo:** `apt-get remove lynis` and empty `WEEKLY_KINDS`. Stored scores stay in the ops service.
 
@@ -77,7 +87,7 @@ CrowdSec runs on every server and bans automatically through the iptables bounce
 1. App server: `ssh root@app-1 /opt/ops-collect-src/crowdsec/install-crowdsec.sh --web`. The script adds CrowdSec's package repository, installs `crowdsec` with the `linux` and `sshd` collections, reads the access log of `coolify-proxy` with `--web` (enable `--accesslog=true` on the proxy in Coolify) and installs the bouncer last.
 2. Ops server: the same without `--web`.
 3. Check: `cscli parsers list | grep tailscale` shows the whitelist, `cscli bouncers list` the bouncer. Log in over SSH from a machine in your tailnet to confirm you are not locked out.
-4. Add `ssh crowdsec` to `DAILY_KINDS` in `/etc/ops-collect.env`.
+4. `ssh` and `crowdsec` are in the default `DAILY_KINDS` of `/etc/ops-collect.env`; before CrowdSec is installed on a server, remove `crowdsec` from its list (`ssh` works without CrowdSec).
 5. fail2ban can stay; banning twice does no harm.
 
 **Undo:** `apt-get remove crowdsec-firewall-bouncer-iptables crowdsec` removes the bouncer and its rules. Then remove `ssh crowdsec` from `DAILY_KINDS`. Locked out: log in through your provider's console and run `cscli decisions delete --ip <ip>`.
@@ -89,6 +99,8 @@ CrowdSec runs on every server and bans automatically through the iptables bounce
 ```
 SSH_KNOWN_KEYS=[{"label":"backup","fingerprint":"SHA256:<fingerprint>","user":"root","networks":["10.0.1.0/24"]},{"label":"admin","fingerprint":"SHA256:<fingerprint>","user":"root","networks":["100.64.0.0/10"]},{"label":"pipeline","fingerprint":"SHA256:<fingerprint>","user":"deploy","networks":["198.51.100.10/32"]}]
 ```
+
+The `pipeline` entry above is for a CI that connects from a fixed address. A CI that reaches the server over Tailscale (the examples in `deploy/ci/`) arrives from a changing address in `100.64.0.0/10`; use that network for it, and keep in mind that it covers every device in the tailnet.
 
 A known key is never reported from its networks at any time, so keep the networks as narrow as possible: a stolen key used from those networks stays silent.
 

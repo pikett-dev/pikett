@@ -16,11 +16,11 @@ uv sync
 pre-commit install            # optional: runs ruff and gitleaks before each commit
 ```
 
-Docker must be running for the tests (Testcontainers starts a real Postgres).
+Docker must be running for the tests: Testcontainers starts a real Postgres, and some tests run the pinned vmalert and Alloy images over the shipped rules and configuration (the first run pulls them).
 
 ## The gate
 
-A change is ready when all of these pass locally. CI runs the same checks.
+A change is ready when all of these pass locally. CI runs the same checks, plus gitleaks and a `docker build`.
 
 ```bash
 uv run ruff check .

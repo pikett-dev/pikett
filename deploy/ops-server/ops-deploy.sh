@@ -180,7 +180,7 @@ ts_ip="$(sed -n 's/^TAILSCALE_IP=//p' .env)"
 # vmalert reads the alert webhook token from ./alert-token (a compose secret that is not in git). Stop before the
 # build when it is missing, and say what to do; compose would only report a missing secret file.
 if [ ! -f alert-token ]; then
-  echo "deploy/ops-server/alert-token is missing: create it from ALERT_TOKEN in .env (CHANGELOG, Unreleased: upgrade notes)" >&2
+  echo "deploy/ops-server/alert-token is missing: create it from ALERT_TOKEN in .env (see the upgrade notes in CHANGELOG.md, 0.2.0)" >&2
   exit 1
 fi
 # After a rotation in .env the file keeps the old value, vmalert then sends it and every alert is answered with 401.

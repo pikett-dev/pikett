@@ -10,8 +10,8 @@ To use it, tell your agent:
 
 Follow these rules for the whole installation. They override any shortcut that looks faster.
 
-1. **Never handle secrets in the conversation.** Do not ask the human to paste a token, key or password into the chat, and never print one. Generate secrets on the target machine (`openssl rand -hex 32`) and write them straight into the env file there. When a secret comes from a third party (Slack, Anthropic, Coolify, Bitbucket), tell the human which file and which variable to fill in, and let them edit the file on the server themselves (`sudoedit /opt/ops/deploy/ops-server/ops-service.env`).
-2. **Env files are mode 600, owned by root, and never committed.** Check with `stat -c '%a %U' <file>` after writing.
+1. **Never handle secrets in the conversation.** Do not ask the human to paste a token, key or password into the chat, and never print one. Generate secrets on the target machine (`openssl rand -hex 32`) and write them straight into the env file there. When a secret comes from a third party (Slack, Anthropic, Coolify, Bitbucket), tell the human which file and which variable to fill in, and let them edit the file themselves (on the server: `sudoedit /opt/ops/deploy/ops-server/ops-service.env`; with Option A in Phase 2: their local copy, see "Keep one source of truth").
+2. **Env files on the server are mode 600, owned by root, and never committed.** (With Option A the local copies belong to the human; they stay out of Git as well.) Check with `stat -c '%a %U' <file>` after writing.
 3. **Ask before anything that costs money or changes a server.** Creating a server, opening a firewall port, installing packages, starting services and rebooting each need an explicit "yes" from the human. Read-only checks need no confirmation.
 4. **One phase at a time.** Finish a phase, run its check, report the result in two or three lines, and wait for the human before you start the next one.
 5. **Dry run first** where the script supports it (`DRY_RUN=1`). Show the human what will run.
@@ -41,7 +41,7 @@ Run on each app server and, if it exists, on the ops server:
 lsb_release -ds                       # expect Ubuntu 24.04 or another Debian-based system
 systemctl --version | head -1
 docker version --format '{{.Server.Version}}'
-docker compose version
+docker compose version                # 2.24 or later on the app servers (agent.sh uses env_file with required: false)
 tailscale status --self --peers=false
 free -h && df -h /
 ```
@@ -52,14 +52,16 @@ On your own machine: `tailscale ping <each server>` and `ssh <user>@<server> tru
 
 ## Phase 2: the ops server
 
-**Option A, a new server at Hetzner.** `join` advertises `tag:pikett-ops` (change it with `TS_TAGS`), and a tag works only when the tailnet policy defines it in `tagOwners` and the single-use auth key is allowed to set it. So the human applies the tailnet policy first (steps 1 and 3 of "Tailnet policy" below) and creates the auth key afterwards. From a clone of the repository on the human's machine, with `hcloud` configured:
+**Option A, a new server at Hetzner.** Work in a clone of the repository on the human's machine, checked out at the release you install (`git checkout v<latest release>`), with `hcloud` configured: `provision.sh deploy` copies that working tree to the server. `join` advertises `tag:pikett-ops` (change it with `TS_TAGS`), and a tag works only when the tailnet policy defines it in `tagOwners` and the single-use auth key is allowed to set it. So the human applies the tailnet policy first (steps 1 and 3 of "Tailnet policy" below) and creates the auth key afterwards.
 
 ```bash
 cd deploy/ops-server
-DRY_RUN=1 ./provision.sh create       # show what will be ordered, then ask the human
-./provision.sh create                 # asks before ordering
-./provision.sh join                   # installs Tailscale and joins the tailnet
+DRY_RUN=1 ./provision.sh create                   # show what will be ordered, then ask the human
+./provision.sh create                             # asks before ordering
+TS_AUTHKEY=<single-use key> ./provision.sh join   # the human runs this one, the key is a secret
 ```
+
+`join` waits for the first boot of the server. If SSH refuses the connection in the first minute, run it again.
 
 **Option B, any other machine.** Install Docker and Tailscale on it, then:
 
@@ -67,35 +69,42 @@ DRY_RUN=1 ./provision.sh create       # show what will be ordered, then ask the 
 sudo git clone https://github.com/pikett-dev/pikett.git /opt/ops
 cd /opt/ops && sudo git checkout v<latest release>
 sudo docker build -t pikett:latest /opt/ops
+sudo mkdir /opt/ops/deploy/vmalert/rules.live
+sudo cp /opt/ops/deploy/vmalert/rules/*.yml /opt/ops/deploy/vmalert/rules.live/
 ```
 
-**Configuration on the ops server** (both options; `docs/operating.md`, "Configuration files", lists every configuration file of an installation):
+Compose refuses to start vmalert without `deploy/vmalert/rules.live/`. `ops-deploy` and `provision.sh deploy` build that folder on every run; here you build it once by hand. `/health` then reports the version `dev`: only `ops-deploy` passes the commit to the image. Rules of your own (Phase 7) are easiest with `ops-deploy`, see "Deploy from CI" in `docs/operating.md`.
+
+**Configuration** (`docs/operating.md`, "Configuration files", lists every configuration file of an installation). Option A: in `deploy/ops-server` of the clone on the human's machine; `provision.sh deploy` copies the files to the server. Option B: in `/opt/ops/deploy/ops-server` on the server, with `sudo` in front of each command.
 
 ```bash
-cd /opt/ops/deploy/ops-server
-sudo install -m 600 .env.example .env
-sudo install -m 600 ops-service.env.example ops-service.env
+install -m 600 .env.example .env
+install -m 600 ops-service.env.example ops-service.env
 ```
 
-In `.env`: set `TAILSCALE_IP` to `tailscale ip -4` of the ops server and `OPS_IMAGE=pikett:latest`. Generate `OPS_DB_PASSWORD`, `KUMA_DB_PASSWORD`, `KUMA_DB_ROOT_PASSWORD` and `TRIVY_TOKEN` with `openssl rand -hex 24` directly into the file, for example:
+In `.env`: set `TAILSCALE_IP` to `tailscale ip -4` of the ops server and `OPS_IMAGE=pikett:latest` (with Option A `./provision.sh deploy` writes `TAILSCALE_IP` and `OPS_IMAGE` on the server itself). Generate `OPS_DB_PASSWORD`, `KUMA_DB_PASSWORD`, `KUMA_DB_ROOT_PASSWORD` and `TRIVY_TOKEN` with `openssl rand -hex 24` directly into the file. `perl` behaves the same on macOS and Linux, `sed -i` does not:
 
 ```bash
-sudo sed -i "s|^OPS_DB_PASSWORD=.*|OPS_DB_PASSWORD=$(openssl rand -hex 24)|" .env
+perl -pi -e "s|^OPS_DB_PASSWORD=.*|OPS_DB_PASSWORD=$(openssl rand -hex 24)|" .env
 ```
 
-Generate the token of the alert webhook the same way and write it to both places, so a new installation never runs with an open webhook. `.env` holds it for the service (`ALERT_TOKEN`), the file `alert-token` next to it holds it for vmalert, and the two must be identical:
+Generate the token of the alert webhook the same way, so a new installation never runs with an open webhook. `.env` holds it for the service (`ALERT_TOKEN`), the file `alert-token` next to it holds it for vmalert, and the two must be identical. With Option A set `ALERT_TOKEN` in `.env` only: `./provision.sh deploy` writes `alert-token` on the server from it. With Option B write both:
 
 ```bash
 token="$(openssl rand -hex 32)"
-sudo sed -i "s|^ALERT_TOKEN=.*|ALERT_TOKEN=$token|" .env
-sudo install -m 600 /dev/null alert-token
-printf '%s' "$token" | sudo tee alert-token >/dev/null
+perl -pi -e "s|^ALERT_TOKEN=.*|ALERT_TOKEN=$token|" .env
+install -m 600 /dev/null alert-token
+printf '%s' "$token" | tee alert-token >/dev/null
 unset token
 ```
 
-With Option A, set `ALERT_TOKEN` in the `.env` on the human's machine instead; `./provision.sh deploy` writes `alert-token` on the server from it. Do not print the token.
+With Option B run each of these with `sudo` (`sudo perl -pi ...`, `sudo install ...`, `printf ... | sudo tee alert-token >/dev/null`): the redirect of a `sudo printf` would run as your own user and fail.
 
-In `ops-service.env`: set `PROJECT_NAME`, `LANGUAGE` (`en` or `de`), `TIMEZONE` (an IANA name; use the zone of the servers, the timers in `deploy/` say `Europe/Vienna`; it also sets the day for the digest and the AI budget, the on-call week, SSH quiet hours, the reboot window and how patch logs are read), `AGENT_STACK_DESCRIPTION` (a few sentences about the human's stack, from Phase 0), and `BASE_URL=http://<tailscale-ip>:8030`. The database URL is set by `compose.yml` from `OPS_DB_PASSWORD`. Leave Slack, Anthropic and other third-party tokens empty for now.
+Do not print the token.
+
+**Keep one source of truth (Option A).** Every `./provision.sh deploy` overwrites `.env`, `ops-service.env` and `alert-token` on the server with the local copies. So every later edit in this guide (Slack tokens in Phase 3, `HOST_REPORT_TOKENS` in Phase 5, runner tokens in Phase 6) goes into the local files, followed by another `./provision.sh deploy`. Or you stop using `provision.sh deploy` after the first install and deploy by tag from then on (`docs/operating.md`, "Deploy from CI"), and edit the files on the server. Mixing both loses settings.
+
+In `ops-service.env`: set `PROJECT_NAME`, `LANGUAGE` (`en` or `de`), `TIMEZONE` (an IANA name; use the zone of the servers, the timers in `deploy/` say `Europe/Vienna`; it also sets the day for the digest and the AI budget, the on-call week, SSH quiet hours, the reboot window and how patch logs are read), `AGENT_STACK_DESCRIPTION` (a few sentences about the human's stack, from Phase 0), and `BASE_URL=http://<tailscale-ip>:8030` (with Option A `./provision.sh deploy` writes `BASE_URL` itself). The database URL is set by `compose.yml` from `OPS_DB_PASSWORD`. Leave Slack, Anthropic and other third-party tokens empty for now.
 
 Start the stack (Option A: `./provision.sh deploy` from the human's machine does the copy, build and start):
 
@@ -105,17 +114,19 @@ sudo docker compose ps
 curl -fsS http://<tailscale-ip>:8030/health
 ```
 
-**Check:** all containers are `running` or `healthy`, `/health` answers `{"status":"ok",...}`, `http://<tailscale-ip>:8030/ops` opens in the human's browser over Tailscale. No port is reachable from the public internet (`ss -tlnp` shows only the Tailscale IP and SSH). Without a token the service logs `ALERT_TOKEN is not set`; with it, `curl -s -o /dev/null -w '%{http_code}' -X POST http://<tailscale-ip>:8030/api/v2/alerts -H 'Content-Type: application/json' -d '[]'` answers `401`.
+**Check:** all containers are `running` or `healthy`, `/health` answers `{"status":"ok",...}`, `http://<tailscale-ip>:8030/ops` opens in the human's browser over Tailscale. No service port is reachable from the public internet (`ss -tlnp` shows only the Tailscale IP and SSH). SSH stays open to the internet until the human runs `lockdown` (below). Without a token the service logs `ALERT_TOKEN is not set`; with it, `curl -s -o /dev/null -w '%{http_code}' -X POST http://<tailscale-ip>:8030/api/v2/alerts -H 'Content-Type: application/json' -d '[]'` answers `401`.
 
 **Optional: deploys from CI.** Not needed to finish the install. If the human wants a push to deploy, point them to `docs/operating.md`, section "Deploy from CI" (it needs `provision.sh pipeline` and the examples in `deploy/ci/`).
 
-**Tailnet policy (the human does this in the Tailscale admin console; you do not).** The web UI has no login and the telemetry ports (9428, 8428, 10428) accept reads and writes from every device in the tailnet, so the access control is the tailnet policy. Ask the human to:
+**Tailnet policy (the human does this in the Tailscale admin console; you do not).** The web UI has no login and the telemetry ports (9428, 8428, 10428) accept reads and writes from every device in the tailnet, and so does the trivy-server (4954) unless `TRIVY_TOKEN` is set, so the access control is the tailnet policy. Ask the human to:
 
 1. Open the admin console, Access controls, and merge `deploy/tailscale-acl.example.hujson` into the policy: replace the e-mail addresses in `group:pikett-team` and the address in the `tests` block (a failing test makes Tailscale refuse the policy), keep their other rules, and remove any broad `"src": ["*"], "dst": ["*"]` rule once these cover what the team needs. The file's `tests` must pass.
-2. Tag the ops server with `tag:pikett-ops` (Machines, the server, Edit ACL tags), and later each app server with `tag:pikett-app` (do it before Phase 4). A server that joined with `provision.sh` already advertises `tag:pikett-ops`.
+2. Tag the ops server with `tag:pikett-ops` (Machines, the server, Edit ACL tags), and every app server with `tag:pikett-app` now, before the broad rule goes. The only SSH rule for the team to app servers is on that tag, and Alloy needs it (Phase 4). A server that joined with `provision.sh` already advertises `tag:pikett-ops`.
 3. Save the policy.
 
-**Check:** the human's browser still opens `http://<tailscale-ip>:8030/ops`; from a tailnet device that is neither in the group nor tagged, `curl -m 5 http://<tailscale-ip>:8428/` times out; from an app server (Phase 4) it works.
+**Check:** the human's browser still opens `http://<tailscale-ip>:8030/ops` and `ssh root@<app server>` still works; from a tailnet device that is neither in the group nor tagged, `curl -m 5 http://<tailscale-ip>:8428/` times out; from an app server (Phase 4) it works.
+
+**Close public SSH (Option A, the human does it).** `provision.sh create` leaves port 22 open to the internet for the bootstrap. Once the policy is saved and `ssh root@<ops server name>` works over Tailscale, the human runs `./provision.sh lockdown` in `deploy/ops-server`. It checks the Tailscale login first and refuses to close SSH when it fails. **Check:** `hcloud firewall describe <ops server name>` lists no rule for port 22. On another provider, remove that rule at the provider yourself.
 
 ## Phase 3: Slack
 
@@ -127,20 +138,23 @@ The human does this part; you tell them the steps.
 4. Invite the bot to both channels and copy the channel IDs (channel details, at the bottom).
 5. Edit `ops-service.env` on the ops server and fill in `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, `SLACK_ALERTS_CHANNEL`, `SLACK_OPS_CHANNEL`, `SLACK_ALLOWED_USERS`, `ONCALL_PEOPLE`, `ONCALL_ANCHOR` (a Monday). If the analysis is on: `ANTHROPIC_API_KEY` and `AGENT_DAILY_BUDGET_USD`.
 
-Then restart: `sudo docker compose up -d ops-service`.
+Then apply it: with Option A `./provision.sh deploy` (after the edit in the local file), with Option B `sudo docker compose up -d ops-service`. `docker compose restart` does not re-read the env file; `up -d` does.
 
-**Check:** `/oncall` in Slack answers with the rotation. Send a test alert from the human's machine:
+**Check:** `/oncall` in Slack answers with the rotation. Send a test alert. The webhook needs the token, so run this as root on the ops server, where the token file is (mode 600; the repository is in `/opt/ops`). The script reads the file, so the token never appears on screen:
 
 ```bash
-OPS_URL=http://<tailscale-ip>:8030 dev/alert.sh fire P2
-OPS_URL=http://<tailscale-ip>:8030 dev/alert.sh resolve P2
+cd /opt/ops
+sudo ALERT_TOKEN_FILE=deploy/ops-server/alert-token OPS_URL=http://<tailscale-ip>:8030 dev/alert.sh fire P2
+sudo ALERT_TOKEN_FILE=deploy/ops-server/alert-token OPS_URL=http://<tailscale-ip>:8030 dev/alert.sh resolve P2
 ```
 
 A thread appears in the alerts channel and is marked resolved.
 
 ## Phase 4: telemetry from each app server
 
-From the human's machine, per app server (details in `deploy/app-host/README.md`):
+First check that the app server carries `tag:pikett-app` (tailnet policy in Phase 2; the human sets it in the admin console). Without it the policy blocks Alloy.
+
+From the human's machine, per app server (details in `deploy/app-host/README.md`). Always set the three variables: `agent.sh` defaults to the names `app-1` and `ops-server`, and a second server deployed without them would be labelled `host=app-1`. `TEST_SSH_KEY` names the SSH key (default `~/.ssh/app_server`).
 
 ```bash
 TEST_HOST=<app server> HOST_NAME=<app server> OPS_HOST=<ops server> DRY_RUN=1 deploy/app-host/agent.sh deploy
@@ -154,13 +168,13 @@ Ask the human to set `OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy:4318` and `DEPLOY
 
 If the human has their own `/metrics` endpoints or Postgres databases to watch, follow `docs/operating.md`, "Your own rules and scrape targets": `local-*.alloy` files from `deploy/app-host/alloy/examples/`, passed with `ALLOY_LOCAL_DIR=<folder>`. The secrets for them (a Bearer token, a database DSN) the human writes into `/opt/ops-agent/secrets.env` on the app server (mode 600); never read, print or commit them. The Postgres role needs `pg_monitor` and nothing else, and creating it in their database needs their "yes".
 
-Tag the app server with `tag:pikett-app` in the Tailscale admin console first (the human does it), or the tailnet policy blocks Alloy.
-
 **Check:** `deploy/app-host/agent.sh status` shows host metrics, containers and log lines from the app server (it asks the ops server from the app server, because only app servers may reach the telemetry ports), and the `AppServerSilent` incident (if one opened) closes.
 
 ## Phase 5: security checks on every server
 
-Follow `deploy/host-agent/README.md`, section "Rollout", for each server including the ops server. Generate the per-server tokens on the ops server and put them into `HOST_REPORT_TOKENS` and `SECURITY_HOSTS`. Copy each server's own token into its `/etc/ops-collect.env` over SSH, without printing it.
+Follow `deploy/host-agent/README.md`, section "Rollout", for each server including the ops server. Generate the per-server tokens on the ops server and put them into `HOST_REPORT_TOKENS` and `SECURITY_HOSTS`. Copy each server's own token into its `/etc/ops-collect.env` over SSH, without printing it. Copy `TRIVY_SERVER` (`http://<ops server tailscale ip>:4954`) and `TRIVY_TOKEN` (the value from `.env` on the ops server) there as well: the default `DAILY_KINDS` contains `trivy`, and without both the Trivy report is an error.
+
+The env example already switches on `crowdsec` in `DAILY_KINDS` and `lynis` in `WEEKLY_KINDS`. Take them out of the lists on a server until you have installed CrowdSec and Lynis there (next paragraph), or the first run reports `cscli is missing` and `lynis is not installed`, and `LynisFailed` opens.
 
 Then, only with the human's "yes" for each: the patch window (section "Patch window"), Lynis and CrowdSec (same README). CrowdSec can lock you out if the Tailscale whitelist is missing; install it exactly in the order the script uses and keep an SSH session open while you test a second login.
 
@@ -174,8 +188,8 @@ Only if the human wants actions. Follow `deploy/runner/README.md`. The shipped `
 
 ## Phase 7: alert rules and handover
 
-1. Walk through `deploy/vmalert/rules/*.yml` with the human. Do not edit the shipped files: put changed or added rules into `deploy/vmalert/rules.local/` (a file with the name of a shipped one replaces it, `groups: []` switches it off), see `docs/operating.md`, "Your own rules and scrape targets". `ops-deploy` checks them with `vmalert -dryRun` and loads them; vmalert picks up a change within 30 seconds.
-2. Set `HEALTHCHECKS_PING_URL` so a dead ops server is noticed from outside.
+1. Walk through `deploy/vmalert/rules/*.yml` with the human. `AppServerSilent` fires when no server sends metrics, `AppHostSilent` when one of several stops. Do not edit the shipped files: put changed or added rules into `deploy/vmalert/rules.local/` (a file with the name of a shipped one replaces it, `groups: []` switches it off), see `docs/operating.md`, "Your own rules and scrape targets". `ops-deploy` checks them with `vmalert -dryRun` and loads them; it exists only after `provision.sh pipeline` (`provision.sh deploy` loads `rules.local/` too, but runs no check). vmalert picks up a change within 30 seconds.
+2. Set `HEALTHCHECKS_PING_URL` so a dead ops server is noticed from outside: any push-monitor URL that answers a `GET` with 2xx (healthchecks.io, or an Uptime Kuma push monitor that does not run on the ops server), with a period of 5 minutes plus a grace time. Apply it like any other change to `ops-service.env`.
 3. Write a short handover note for the human: servers and what runs where, which phases are done, which optional parts are off, where the env files are, and how to undo each phase. Do not include any secret in it.
 
 ## Final checklist
@@ -185,5 +199,5 @@ Only if the human wants actions. Follow `deploy/runner/README.md`. The shipped `
 - [ ] Metrics, logs and traces arrive from every app server
 - [ ] Every server sends host reports
 - [ ] No env file is world-readable, no secret appeared in the conversation or in a commit
-- [ ] No port of the ops server is public
+- [ ] No port of the ops server is public (SSH included, after `lockdown`)
 - [ ] The human knows how to reach the web UI and how to undo each phase

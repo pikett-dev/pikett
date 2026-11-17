@@ -7,18 +7,18 @@ Alloy collects Docker logs, host and container metrics, and OTLP from your appli
 From your own machine, with SSH access to the app server over Tailscale (key `~/.ssh/app_server` by default, override with `TEST_SSH_KEY=...`):
 
 ```
-deploy/app-host/agent.sh deploy
-deploy/app-host/agent.sh status
+TEST_HOST=<app server> HOST_NAME=<app server> OPS_HOST=<ops server> deploy/app-host/agent.sh deploy
+TEST_HOST=<app server> HOST_NAME=<app server> OPS_HOST=<ops server> deploy/app-host/agent.sh status
 ```
 
-`deploy` copies this folder to `/opt/ops-agent`, writes `.env` (the Tailscale address of the ops server and `HOST_NAME`) and starts Alloy. `status` shows the container, warnings from the Alloy log, and whether host metrics and logs arrive on the ops server. Prefix either command with `DRY_RUN=1` to print the commands without running them.
+Set all three variables: the defaults name `app-1` and `ops-server`, and a second server deployed without them would be labelled `host=app-1`. The app server needs Docker Compose 2.24 or later. `deploy` copies this folder to `/opt/ops-agent`, writes `.env` (the Tailscale address of the ops server and `HOST_NAME`) and starts Alloy. `status` shows the container, warnings from the Alloy log, and whether host metrics and logs arrive on the ops server. Prefix either command with `DRY_RUN=1` to print the commands without running them.
 
 ## Your own Alloy files
 
 Alloy runs on the folder `/opt/ops-agent/alloy/`: it loads every `*.alloy` file in it as one configuration (subfolders such as `examples/` are not read). Add your own as `local-*.alloy` and reference the components of `config.alloy`, for example `prometheus.remote_write.ops.receiver`; component names must be unique across files, so use a `local_` prefix.
 
 ```
-ALLOY_LOCAL_DIR=../<your-repo>/alloy deploy/app-host/agent.sh deploy
+ALLOY_LOCAL_DIR=../<your-repo>/alloy TEST_HOST=<app server> HOST_NAME=<app server> OPS_HOST=<ops server> deploy/app-host/agent.sh deploy
 ```
 
 The folder may hold only `local-*.alloy` files (anything else stops the script before it copies), and a file removed from the folder is removed on the server. Without the variable `deploy` leaves the server's files alone. Secrets for these files go into `/opt/ops-agent/secrets.env` (mode 600, created by hand, never written or deleted by `agent.sh`) and are read with `sys.env("NAME")`. `examples/` has a Bearer-token scrape of an app's `/metrics` and a Postgres exporter; the rules for Postgres are in `deploy/vmalert/rules/postgres.yml`. Details: `docs/operating.md`, "Your own rules and scrape targets". `agent.sh status` shows Alloy's warnings; a file Alloy cannot load stops it from starting, so look at `docker compose logs alloy` after a deploy.
@@ -37,12 +37,12 @@ Redeploy afterwards. Check that the commit SHA reaches the application (Coolify 
 ## What you see afterwards
 
 - `AppServerSilent` closes on its own as soon as host metrics arrive.
-- Logs, metrics and traces of your applications on the ops server (ports 9428, 8428 and 10428, Tailscale only).
+- Logs, metrics and traces of your applications on the ops server (ports 9428, 8428 and 10428, Tailscale only). With the example tailnet policy only app servers reach these ports; the team looks at them through the analyst, Slack and the web UI.
 - Logs of every container on the app server, including Coolify's own.
 
 ## Undo
 
-On the app server: `cd /opt/ops-agent && docker compose down -v` stops Alloy and deletes its data volume (the persistent queue; logs and metrics already sent stay on the ops server). Then remove `/opt/ops-agent`. Remove `OTEL_EXPORTER_OTLP_ENDPOINT` from your applications and redeploy them, or their exporters log errors. Do not remove the Docker network `coolify`; it belongs to Coolify. The ops server raises `AppServerSilent` (P1) when the metrics stop, so stop vmalert or take the alert rule out first (`deploy/vmalert/rules/`).
+On the app server: `cd /opt/ops-agent && docker compose down -v` stops Alloy and deletes its data volume (the persistent queue; logs and metrics already sent stay on the ops server). Then remove `/opt/ops-agent`. Remove `OTEL_EXPORTER_OTLP_ENDPOINT` from your applications and redeploy them, or their exporters log errors. Do not remove the Docker network `coolify`; it belongs to Coolify. The ops server raises `AppServerSilent` (P1) when the metrics stop, so stop vmalert first when this was the only app server. When other app servers remain, `AppHostSilent` (P1) names this one for up to 24 hours; to stop it sooner, mute the incident for 24 hours with the Slack button. (A copy of `host.yml` without that rule in `deploy/vmalert/rules.local/` also works, but it freezes the other rules of that file at today's version: remove it again after 24 hours. `groups: []` would switch off the disk, memory and container alerts too.) The same happens when you correct `HOST_NAME` after a deploy: the old name raises `AppHostSilent` for up to 24 hours.
 
 ## Known limits
 
