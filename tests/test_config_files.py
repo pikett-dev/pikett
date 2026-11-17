@@ -140,3 +140,10 @@ def test_compose_refuses_to_start_without_rules_live(tmp_path: Path) -> None:
     subprocess.run([*base, "down", "--remove-orphans"], capture_output=True, cwd=work / "ops-server")  # noqa: S603
     assert missing.returncode != 0
     assert "rules.live" in missing.stderr
+
+
+def test_the_host_rules_name_the_silent_host_in_the_alert() -> None:
+    rules = {r["alert"]: r for g in yaml.safe_load((RULES / "host.yml").read_text())["groups"] for r in g["rules"]}
+    per_host = rules["AppHostSilent"]
+    assert per_host["labels"]["severity"] == "P1"
+    assert "{{ $labels.host }}" in per_host["annotations"]["summary"]

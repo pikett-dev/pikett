@@ -4,7 +4,7 @@ groups:
     interval: 30s
     rules:
       - alert: AppServerSilent
-        # One app server for now; with more hosts, alert per host label instead.
+        # No host sends metrics at all. It also fires on a fresh install, before any host has sent metrics.
         expr: absent_over_time(node_uname_info[3m])
         # Metrics are missing for a moment after every start of the ops server; a real outage is still caught.
         for: 1m
@@ -12,6 +12,24 @@ groups:
           severity: P1
         annotations:
           summary: "No metrics from the app server for 3 minutes"
+
+      - alert: AppHostSilent
+        # One host of several stopped sending: seen in the last 24 hours, not in the last 3 minutes, while at least
+        # one other host still reports (if none does, AppServerSilent covers it). A host that is gone for good
+        # stops firing after 24 hours.
+        expr: |
+          (
+            group by (host) (present_over_time(node_uname_info[24h]))
+            unless
+            group by (host) (present_over_time(node_uname_info[3m]))
+          )
+          and on ()
+          count(present_over_time(node_uname_info[3m]))
+        for: 1m
+        labels:
+          severity: P1
+        annotations:
+          summary: "No metrics from {{ $labels.host }} for 3 minutes"
 
       - alert: DiskAlmostFull
         expr: |

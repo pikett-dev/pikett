@@ -4,6 +4,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+- **New alert `AppHostSilent` (P1).** With several app servers, `AppServerSilent` fired only when none of them sent metrics. `AppHostSilent` names a host that was seen in the last 24 hours and has sent nothing for 3 minutes, while at least one other host still reports (when none does, `AppServerSilent` covers it). A host you remove on purpose raises it for up to 24 hours, and so does the old name after you correct `HOST_NAME`; mute the incident in Slack. vmalert loads the rule within 30 seconds of the deploy, no setting is needed.
 - **Fix: `dev/alert.sh` works against a server that needs the token, and on Linux.** `ALERT_TOKEN_FILE=deploy/ops-server/alert-token` reads the token from the file, so it never shows up on screen or in a shell history (before, only `ALERT_TOKEN` or the local dev stack worked, and a remote `OPS_URL` got a 401). The script also runs with GNU `date`, so you can use it on the ops server.
 
 ## 0.6.1 - 2026-11-17
