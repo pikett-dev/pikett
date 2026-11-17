@@ -41,7 +41,7 @@ The reboot job is created by the ops service only from a Slack approval, from th
    ```
 3. Put the public key at `/etc/ops-runner/job-signing.pub` (output of `python -m runner.keys public`).
    With your own catalog (README, "Runbook catalog"), copy it to the server too and give the path to the next step: `ssh root@app-1 CATALOG_FILE=<path on the server> /opt/ops-runner-src/deploy/runner/install.sh`. The script checks the file first and keeps it in `/etc/ops-runner/catalog.json`, so a later run without `CATALOG_FILE` leaves it in place.
-4. `ssh root@app-1 /opt/ops-runner-src/deploy/runner/install.sh` creates the user, directories and unit, and stops after creating `/etc/ops-runner/ops-runner.env`. Fill in `OPS_URL`, `RUNNER_TOKEN` and `HOST_NAME`, then run the script again.
+4. `ssh root@app-1 /opt/ops-runner-src/deploy/runner/install.sh` creates the user, directories and unit, and stops after creating `/etc/ops-runner/ops-runner.env`. Fill in `OPS_URL`, `RUNNER_TOKEN` and `HOST_NAME`, then run the script again (all configuration files at a glance: `docs/operating.md`, "Configuration files").
 5. Check: `systemctl status ops-runner` and `journalctl -u ops-runner -n 20`; the runner card in the ops UI shows the heartbeat.
 
 **Undo:** `systemctl disable --now ops-runner; rm /etc/systemd/system/ops-runner.service /etc/systemd/system/ops-runbook-*.service /etc/polkit-1/rules.d/50-ops-runner.rules; rm -r /opt/ops-runner /etc/ops-runner /var/lib/ops-runner; userdel ops-runner; systemctl daemon-reload`. Remove the server from `RUNNER_TOKENS`, or the missing heartbeat opens a P1.

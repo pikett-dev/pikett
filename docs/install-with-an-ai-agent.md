@@ -69,7 +69,7 @@ cd /opt/ops && sudo git checkout v<latest release>
 sudo docker build -t pikett:latest /opt/ops
 ```
 
-**Configuration on the ops server** (both options):
+**Configuration on the ops server** (both options; `docs/operating.md`, "Configuration files", lists every configuration file of an installation):
 
 ```bash
 cd /opt/ops/deploy/ops-server

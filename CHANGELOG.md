@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+- Docs: `docs/operating.md` has a section "Configuration files": the five files of an installation (`.env`, `ops-service.env`, `alert-token`, the runner's and the collector's env files), where each lives, what it holds, how it gets there, and what `provision.sh deploy` and `ops-deploy` do with them. The README, the install guide and the runner README point to it.
+
 ## 0.5.1 - 2026-11-17
 
 - **`provision.sh pipeline` accepts an HTTPS `OPS_REPO_URL`** for a public repository, for example `https://github.com/pikett-dev/pikett.git`. The repository key, the host key and the SSH config entry are skipped for it. A URL that carries credentials (`https://user:token@...`) is refused, so the server never stores a token in a remote URL. SSH URLs work as before. Switching a server from SSH to HTTPS: see "Deploy from CI" in `docs/operating.md`.
