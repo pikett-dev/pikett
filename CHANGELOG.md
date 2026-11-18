@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+- **Container names of Coolify services:** the containers of a service (a compose stack) share one `coolify.resourceName`, so the collector names them `<resource>/<service>` (`wp1/mariadb`) instead of merging them under one name.
+
 ## 0.6.2 - 2026-11-17
 
 No settings or schema changes. Deploy the release; vmalert loads the new rule within 30 seconds. Nothing else is required.

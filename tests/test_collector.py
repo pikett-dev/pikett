@@ -92,15 +92,31 @@ def test_running_images_name_containers_by_their_coolify_resource_when_they_have
             "Config": {"Image": "core:abc", "Labels": {"coolify.resourceName": "core"}},
         },
         {"Name": "/plain", "Image": "sha256:a", "Config": {"Image": "core:abc", "Labels": None}},
+        {
+            "Name": "/wp-k3x9",
+            "Image": "sha256:a",
+            "Config": {
+                "Image": "core:abc",
+                "Labels": {"coolify.resourceName": "wp1", "coolify.serviceName": "wp1", "coolify.type": "service"},
+            },
+        },
+        {
+            "Name": "/db-k3x9",
+            "Image": "sha256:a",
+            "Config": {
+                "Image": "core:abc",
+                "Labels": {"coolify.resourceName": "wp1", "coolify.serviceName": "mariadb", "coolify.type": "service"},
+            },
+        },
     ]
 
     def fake_docker(*args, timeout=60):
-        return "id1\nid2\nid3\n" if args[0] == "ps" else json.dumps(inspected)
+        return "id1\nid2\nid3\nid4\nid5\n" if args[0] == "ps" else json.dumps(inspected)
 
     monkeypatch.setattr(collector, "docker", fake_docker)
 
     [entry] = collector.running_images()
-    assert entry["containers"] == ["core", "plain"]
+    assert entry["containers"] == ["core", "plain", "wp1/wp1", "wp1/mariadb"]
 
 
 def test_running_images_groups_containers_by_image(collector, monkeypatch):

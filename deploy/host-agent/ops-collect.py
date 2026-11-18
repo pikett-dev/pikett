@@ -179,9 +179,14 @@ def container_label(container: dict[str, Any]) -> str:
     """What a person recognizes: the Coolify resource name when the container has one, else the Docker name.
 
     Coolify names its containers after UUIDs (and adds a timestamp per deploy), which tell nobody which app it is.
+    The containers of a Coolify service (a compose stack) share the resource name; the service name tells them apart.
     """
     labels = container.get("Config", {}).get("Labels") or {}
-    return str(labels.get("coolify.resourceName") or container["Name"].lstrip("/"))
+    resource = labels.get("coolify.resourceName")
+    if not resource:
+        return str(container["Name"].lstrip("/"))
+    service = labels.get("coolify.serviceName")
+    return f"{resource}/{service}" if labels.get("coolify.type") == "service" and service else str(resource)
 
 
 def running_images() -> list[dict[str, Any]]:
