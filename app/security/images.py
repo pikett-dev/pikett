@@ -2,7 +2,10 @@
 
 Nightly, the digest of every running image (from the collector's `images` report) is compared with the digest the
 registry has for the same tag now, the way Diun does it. Images built on the server (the Coolify apps) have no
-registry digest and count as "not checkable". The update itself is an action, not part of this check.
+registry digest and count as local. With Docker's containerd image store they do have a `RepoDigests` entry, so an
+image for which the registry answers "insufficient_scope" to a valid anonymous token (unknown or private repository;
+Docker Hub says the same for an unknown tag) counts as local too. Every other failure stays an error.
+The update itself is an action, not part of this check.
 
 The Coolify version comes from its API (read-only token); the newest release and its notes from GitHub.
 """
@@ -47,6 +50,10 @@ NOTE_LINES = 8
 
 class RegistryError(Exception):
     pass
+
+
+class NotInRegistry(RegistryError):
+    """The registry does not serve this repository to an anonymous client: nothing to compare against."""
 
 
 @dataclass(frozen=True)
@@ -98,7 +105,10 @@ class HttpRegistry:
         response = await self._client.get(realm, params=params, timeout=20)
         response.raise_for_status()
         body = response.json()
-        return str(body.get("token") or body.get("access_token") or "")
+        token = str(body.get("token") or body.get("access_token") or "")
+        if not token:
+            raise RegistryError(self._locale.t("security.images.unknown_auth", challenge=challenge[:100]))
+        return token
 
     async def digest(self, ref: ImageRef) -> str:
         url = f"https://{ref.registry}/v2/{ref.repository}/manifests/{ref.tag}"
@@ -109,6 +119,12 @@ class HttpRegistry:
                 token = await self._token(response.headers["www-authenticate"])
                 headers["Authorization"] = f"Bearer {token}"
                 response = await self._client.head(url, headers=headers, timeout=20)
+                # A valid anonymous token that is not enough for this repository: it does not exist or is private.
+                # Docker Hub answers the same for an unknown tag. A rejected token is a real error.
+                if response.status_code == 401 and 'error="insufficient_scope"' in response.headers.get(
+                    "www-authenticate", ""
+                ):
+                    raise NotInRegistry(f"{ref.registry}/{ref.repository}:{ref.tag}: insufficient_scope")
             response.raise_for_status()
         except (httpx.HTTPError, ValueError) as exc:  # ValueError: a token answer that is not JSON
             raise RegistryError(f"{ref.registry}/{ref.repository}:{ref.tag}: {exc}") from exc
@@ -123,7 +139,7 @@ class HttpRegistry:
 
 
 async def image_status(registry: Registry, image: dict[str, Any]) -> dict[str, Any]:
-    """current | outdated | pinned | local (built on the server, nothing to compare) | error."""
+    """current | outdated | pinned | local (built on the server, or unknown or private at the registry) | error."""
     entry = {"image": image.get("image", ""), "containers": image.get("containers", [])}
     running = {str(d).split("@", 1)[1] for d in image.get("repo_digests") or [] if "@" in str(d)}
     if not running:
@@ -133,6 +149,8 @@ async def image_status(registry: Registry, image: dict[str, Any]) -> dict[str, A
         return {**entry, "status": "pinned"}
     try:
         latest = await registry.digest(ref)
+    except NotInRegistry:
+        return {**entry, "status": "local"}
     except RegistryError as exc:
         return {**entry, "status": "error", "detail": str(exc)[:300]}
     return {**entry, "status": "current" if latest in running else "outdated", "latest": latest}

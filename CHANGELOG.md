@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 - **Container names of Coolify services:** the containers of a service (a compose stack) share one `coolify.resourceName`, so the collector names them `<resource>/<service>` (`wp1/mariadb`) instead of merging them under one name.
 
+- **Fix, image check:** with Docker's containerd image store, images built on the server have a `RepoDigests` entry and were asked for at the registry, which answers 401. A registry that answers `insufficient_scope` to a valid anonymous token (unknown or private repository; Docker Hub also says this for an unknown tag) now counts as "built locally or private" instead of an error line. A rejected or empty token, a 404, a 429 and every other failure stay errors.
+
 ## 0.6.2 - 2026-11-17
 
 No settings or schema changes. Deploy the release; vmalert loads the new rule within 30 seconds. Nothing else is required.

@@ -10,6 +10,7 @@ from app.security.images import (
     HttpRegistry,
     ImageRef,
     ImageUpdatesCheck,
+    NotInRegistry,
     RegistryError,
     note_lines,
     parse_ref,
@@ -102,7 +103,7 @@ async def test_every_running_image_is_current_outdated_pinned_or_local(make, clo
     await check.run(clock.now)
     lines = await security.weekly_lines(clock.now)
 
-    assert lines[0] == f"Images ({HOST}): 1 current, 1 outdated, 1 pinned by digest, 1 built locally"
+    assert lines[0] == f"Images ({HOST}): 1 current, 1 outdated, 1 pinned by digest, 1 built locally or private"
     assert lines[1] == "• newer version available: postgres:18 (db)"
     assert registry.asked == ["library/postgres:18", "grafana/alloy:v1"]
     assert overview._line_state(lines) == overview.WARN  # an outdated image needs a person
@@ -179,3 +180,55 @@ async def test_the_registry_is_asked_with_an_anonymous_token_when_it_wants_one()
     assert digest == NEW
     assert calls[0] == "HEAD https://registry-1.docker.io/v2/library/postgres/manifests/18"
     assert calls[1].startswith("GET https://auth.docker.io/token")
+
+
+async def test_an_image_the_registry_does_not_know_counts_as_local_not_as_an_error(make, clock):
+    check, security = make(FakeRegistry({"library/abc123:4f2e": NotInRegistry("unknown")}))
+    await security.ingest(report(HOST, "images", clock.now, images=[image("abc123:4f2e", OLD, ["core"])]))
+
+    await check.run(clock.now)
+    lines = await security.weekly_lines(clock.now)
+
+    assert lines[0] == f"Images ({HOST}): 1 built locally or private"
+    assert not any(line.startswith("•") for line in lines)  # no error line for the image
+
+
+SCOPE = 'Bearer realm="https://auth.docker.io/token",service="registry.docker.io",error="insufficient_scope"'
+INVALID = 'Bearer realm="https://auth.docker.io/token",service="registry.docker.io",error="invalid_token"'
+CHALLENGE = 'Bearer realm="https://auth.docker.io/token",service="registry.docker.io"'
+
+
+@pytest.mark.parametrize(
+    ("final_status", "final_challenge", "token", "expected"),
+    [
+        (401, SCOPE, {"token": "anon"}, NotInRegistry),  # a valid token that is not enough: unknown or private
+        (401, INVALID, {"token": "anon"}, RegistryError),  # a rejected token is an error, not "local"
+        (401, SCOPE, {}, RegistryError),  # no token in the answer: an auth problem
+        (404, CHALLENGE, {"token": "anon"}, RegistryError),  # the repository exists, the tag is gone
+        (429, CHALLENGE, {"token": "anon"}, RegistryError),
+    ],
+)
+async def test_the_registry_answer_decides_between_unknown_and_failed(final_status, final_challenge, token, expected):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "auth.docker.io":
+            return httpx.Response(200, json=token)
+        if "authorization" not in request.headers:
+            return httpx.Response(401, headers={"www-authenticate": CHALLENGE})
+        return httpx.Response(final_status, headers={"www-authenticate": final_challenge})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RegistryError) as raised:
+            await HttpRegistry(client, EN).digest(parse_ref("abc123:4f2e"))
+
+    assert isinstance(raised.value, NotInRegistry) == (expected is NotInRegistry)
+
+
+async def test_a_401_without_a_bearer_challenge_is_an_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, headers={"www-authenticate": 'Basic realm="registry"'})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RegistryError) as raised:
+            await HttpRegistry(client, EN).digest(parse_ref("registry.example.com/team/app:1"))
+
+    assert not isinstance(raised.value, NotInRegistry)
