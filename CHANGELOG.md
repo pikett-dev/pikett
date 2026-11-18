@@ -4,7 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
-- **The web pages show the release** next to the brand in the header (`Pikett · Acme v0.6.3`), read from `pyproject.toml`, which the image keeps at `/app`. A release that cannot be read is left out. `/health` still reports the commit as `version`.
+## 0.6.4 - 2026-11-18
+
+No settings or schema changes. Deploy the release; nothing else is required. The page header shows `v0.6.4` once it runs.
+
+- **The web pages show the release** next to the brand in the header (`Pikett · Acme v0.6.4`), read from `pyproject.toml`, which the image keeps at `/app`. A release that cannot be read is left out. `/health` still reports the commit as `version`.
 - **Fix: the shell scripts are executable.** `deploy/runner/install.sh`, `deploy/host-agent/install.sh`, `deploy/ops-server/provision.sh`, `deploy/app-host/agent.sh` and six more had mode 644, so the commands in the docs (`ssh root@app-1 /opt/ops-collect-src/install.sh`) failed with "Permission denied" after an `rsync` of a checkout. A test checks that every tracked file with a shebang is executable.
 ## 0.6.3 - 2026-11-18
 
