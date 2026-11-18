@@ -40,6 +40,7 @@
     .top { display: flex; align-items: baseline; gap: 24px; padding: 18px 0 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
     .brand { font-weight: 700; color: var(--fg); text-decoration: none; margin-right: auto; display: inline-flex; align-items: center; gap: 8px; }
     .brand-icon { border-radius: 6px; }
+    .brand-version { color: var(--muted); font-weight: 400; font-size: 14px; }
     .top a.nav { text-decoration: none; color: var(--muted); padding: 4px 0; border-bottom: 2px solid transparent; }
     .top a.nav[aria-current] { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; }
 
@@ -98,7 +99,7 @@
 </head>
 <body><main>
 <header class="top">
-  <a class="brand" href="/ops"><img class="brand-icon" src="/static/pikett-icon.svg" alt="" width="24" height="24">{{ BRAND }}</a>
+  <a class="brand" href="/ops"><img class="brand-icon" src="/static/pikett-icon.svg" alt="" width="24" height="24">{{ BRAND }}{% if VERSION %} <span class="brand-version">v{{ VERSION }}</span>{% endif %}</a>
   <a class="nav" href="/ops"{% if nav == 'ops' %} aria-current="page"{% endif %}>{{ t('web.nav.overview') }}</a>
   <a class="nav" href="/ops/history"{% if nav == 'history' %} aria-current="page"{% endif %}>{{ t('web.nav.history') }}</a>
   <a class="nav" href="/ops/help"{% if nav == 'help' %} aria-current="page"{% endif %}>{{ t('web.nav.help') }}</a>

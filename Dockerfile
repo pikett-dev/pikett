@@ -7,7 +7,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 # COPY --chmod, because the legacy builder of the server's docker.io package does not know that option.
 COPY app ./app
 COPY runner ./runner
-RUN chmod -R a+rX /app/app /app/runner
+RUN chmod -R a+rX /app/app /app/runner && chmod a+r /app/pyproject.toml
 
 FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 ARG SERVICE_VERSION=dev

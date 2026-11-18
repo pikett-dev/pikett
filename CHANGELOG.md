@@ -4,6 +4,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## Unreleased
 
+- **The web pages show the release** next to the brand in the header (`Pikett · Acme v0.6.3`), read from `pyproject.toml`, which the image keeps at `/app`. A release that cannot be read is left out. `/health` still reports the commit as `version`.
 ## 0.6.3 - 2026-11-18
 
 No settings or schema changes. Deploy the release. For the container names of Coolify services, update the collector on each server (`/opt/ops-collect-src/install.sh`, see `deploy/host-agent/README.md`); the image-check fix needs only the deploy.

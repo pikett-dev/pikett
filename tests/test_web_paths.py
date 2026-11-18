@@ -1,5 +1,7 @@
 import base64
+import tomllib
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -7,6 +9,8 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
+from app.web import templating
+from app.web.templating import release_version
 from tests.fakes import Clock, FakeChat, FakePager
 
 HOST = "app-1"
@@ -104,6 +108,20 @@ def test_the_brand_is_pikett_with_the_project_name(database_url, sessions):
     with make_client(database_url, project_name="Acme") as named:
         assert "<title>Overview · Pikett · Acme</title>" in named.get("/ops").text
         assert named.app.title == "Pikett · Acme"
+
+
+def test_the_header_shows_the_release_next_to_the_brand(database_url, sessions):
+    version = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text())["project"]["version"]
+    assert release_version() == version
+    with make_client(database_url) as plain:
+        assert f'<span class="brand-version">v{version}</span>' in plain.get("/ops").text
+
+
+def test_a_release_that_cannot_be_read_is_left_out(database_url, sessions, monkeypatch, tmp_path):
+    monkeypatch.setattr(templating, "PYPROJECT", tmp_path / "missing.toml")
+    assert release_version() == ""
+    with make_client(database_url) as plain:
+        assert "brand-version" not in plain.get("/ops").text.split("</style>")[1]  # the CSS rule stays, the span goes
 
 
 def test_an_old_parameter_is_dropped_when_the_new_one_is_there_too(client):

@@ -1,3 +1,4 @@
+import tomllib
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,6 +14,19 @@ from app.security.help import all_help
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "static"
+PYPROJECT = Path(__file__).resolve().parents[2] / "pyproject.toml"
+
+
+def release_version() -> str:
+    """The release this code is (`0.6.3`), from pyproject.toml, which the image keeps next to `app/`.
+
+    The page shows it beside the brand. It is empty when the file is missing or unreadable: a version that cannot be
+    told is left out, not guessed.
+    """
+    try:
+        return str(tomllib.loads(PYPROJECT.read_text())["project"]["version"])
+    except (OSError, KeyError, tomllib.TOMLDecodeError):
+        return ""
 
 
 def _blank_if_none(fn: Callable[[datetime], str]) -> Callable[[datetime | None], str]:
@@ -34,7 +48,14 @@ def build_templates(locale: Locale, brand: str) -> Jinja2Templates:
     env.filters["duration"] = lambda delta: locale.duration(delta) if delta is not None else ""
     env.filters["short_date"] = locale.day_of
     env.filters["items_of"] = lambda servers: {name: name for name in servers}
-    env.globals.update(t=locale.t, label=locale.label, lang=locale.language, BRAND=brand, HELP=all_help(locale))
+    env.globals.update(
+        t=locale.t,
+        label=locale.label,
+        lang=locale.language,
+        BRAND=brand,
+        VERSION=release_version(),
+        HELP=all_help(locale),
+    )
     return templates
 
 
